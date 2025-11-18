@@ -91,6 +91,8 @@ int pam_save_delegate(const char *filename, const struct gpujpeg_image_parameter
         break;
     case GPUJPEG_444_U8_P012A:
     case GPUJPEG_444_U8_P012Z:
+    case GPUJPEG_444_U16_P012O:
+    case GPUJPEG_444_F32_P012O:
         depth = 4;
         break;
     default:

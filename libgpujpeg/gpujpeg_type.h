@@ -106,6 +106,9 @@ enum gpujpeg_pixel_format {
     /// 8bit unsigned samples, 3 or 4 components, each pixel padded to 32bits
     /// with optional alpha (if comp_count=4) or filled with 0xFF, 4:4:4(:4) sampling, interleaved
     GPUJPEG_444_U8_P012A = 7,
+
+    GPUJPEG_444_U16_P012O =  8,
+    GPUJPEG_444_F32_P012O =  9,
 };
 #define GPUJPEG_PIXFMT_NO_ALPHA (-2) ///< placeholder for any pixel format without alpha channel, outside the enum to avoid -Wswitch warns
 

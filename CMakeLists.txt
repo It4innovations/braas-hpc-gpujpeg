@@ -12,11 +12,6 @@ option(HUFFMAN_GPU_CONST_TABLES "Enable Huffman GPU decoder quick const tables" 
 set(OPENGL_CONTEXT AUTO CACHE STRING "Use specifiedn OpenGL context creation, options are: AUTO GLX GLFW NONE")
 set_property(CACHE OPENGL_CONTEXT PROPERTY STRINGS AUTO GLX GLFW NONE)
 
-if(WIN32)
-    set(CMAKE_INSTALL_PREFIX "$ENV{ProgramFiles}/${CMAKE_PROJECT_NAME}")
-    string(REPLACE "\\" "/" CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX})
-endif()
-
 cmake_policy(SET CMP0010 NEW) # error on undefined variable
 
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "gpujpeg") # may be removed when version will be explicitly defined
@@ -42,7 +37,7 @@ add_definitions("-DHAVE_GPUJPEG_VERSION_H")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 
 # Common settings
-include_directories(${CMAKE_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+include_directories(${CMAKE_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} ${CUDA_TOOLKIT_INCLUDE} ${CUDA_INCLUDE_DIRS})
 
 set(NEEDED_COMPILER_FEATURES c_std_11 cxx_delegating_constructors cxx_nullptr)
 
@@ -71,6 +66,7 @@ endif()
 if(POLICY CMP0072)
     cmake_policy(SET CMP0072 NEW)
 endif()
+#find_package(CUDA 10.1)
 find_package(OpenGL)
 find_package(GLEW)
 find_package(GLUT)
@@ -150,6 +146,7 @@ set_target_properties(gpujpeg PROPERTIES PUBLIC_HEADER "${H_FILES}")
 if(GPUJPEG_OPENGL_ENABLED)
     target_link_libraries(gpujpeg ${GPUJPEG_OPENGL_LIBRARIES})
 endif()
+target_link_libraries(gpujpeg ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY})
 
 # GPUJPEG commmand-line application
 add_executable(gpujpeg-bin src/main.c)

@@ -38,6 +38,8 @@
 #include "gpujpeg_postprocessor.h"
 #include "gpujpeg_util.h"
 
+#include <cuda_fp16.h>
+
 /**
  * Store value to component data buffer in specified position by buffer size and subsampling
  *
@@ -165,6 +167,54 @@ inline __device__ void gpujpeg_comp_to_raw_store<GPUJPEG_444_U8_P012Z>(uint8_t *
 }
 
 template<>
+inline __device__ void gpujpeg_comp_to_raw_store<GPUJPEG_444_U16_P012O>(uint8_t *d_data_raw, int &image_width, int &image_height, int &image_position, int &x, int &y, uchar4 &r)
+{
+    image_position = image_position * 4;
+
+    //float scale = 1.0f / 255.0f;
+    half *output = (half*)d_data_raw;
+    //unsigned short *h = (unsigned short *)d_data_raw + image_position;
+    //unsigned char *f = (unsigned char *)&r.x;
+
+    //for (int i = 0; i < 4; i++) {
+    //    union {
+    //        unsigned int i;
+    //        float f;
+    //    } in;
+    //    float fscale = ((i==3) ? 255.0f : (float) f[i]) * scale;
+    //    in.f = (fscale > 0.0f) ? ((fscale < 65504.0f) ? fscale : 65504.0f) : 0.0f;
+    //    int x = in.i;
+
+    //    int absolute = x & 0x7FFFFFFF;
+    //    int Z = absolute + 0xC8000000;
+    //    int result = (absolute < 0x38800000) ? 0 : Z;
+    //    int rshift = (result >> 13);
+
+    //    h[i] = (rshift & 0x7FFF);
+    //}
+
+    output[image_position + 0] = __float2half((float)r.x / 255.0f);
+    output[image_position + 1] = __float2half((float)r.y / 255.0f);
+    output[image_position + 2] = __float2half((float)r.z / 255.0f);
+    output[image_position + 3] = __float2half((float)r.w / 255.0f);
+}
+
+template<>
+inline __device__ void gpujpeg_comp_to_raw_store<GPUJPEG_444_F32_P012O>(uint8_t *d_data_raw, int &image_width, int &image_height, int &image_position, int &x, int &y, uchar4 &r)
+{
+    image_position = image_position * 4;
+
+    float scale = 1.0f / 255.0f;
+    float *h = (float *)d_data_raw + image_position;
+    unsigned char *f = (unsigned char *)&r.x;
+
+    for (int i = 0; i < 4; i++) {
+        float fscale = (float) f[i] * scale;
+        h[i] = fscale;
+    }
+}
+
+template<>
 inline __device__ void gpujpeg_comp_to_raw_store<GPUJPEG_444_U8_P0P1P2>(uint8_t *d_data_raw, int &image_width, int &image_height, int &image_position, int &x, int &y, uchar4 &r)
 {
     d_data_raw[image_position] = r.x;
@@ -277,6 +327,8 @@ gpujpeg_preprocessor_select_decode_kernel(struct gpujpeg_coder* coder)
             case GPUJPEG_444_U8_P012: return &gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, GPUJPEG_444_U8_P012, 3, P1, P2, P3, P4, P5, P6, P7, P8>; \
             case GPUJPEG_444_U8_P012A: return coder->param_image.comp_count == 4 ? &gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, GPUJPEG_444_U8_P012A, 4, P1, P2, P3, P4, P5, P6, P7, P8> : &gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, GPUJPEG_444_U8_P012A, 3, P1, P2, P3, P4, P5, P6, P7, P8>; \
             case GPUJPEG_444_U8_P012Z: return &gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, GPUJPEG_444_U8_P012Z, 3, P1, P2, P3, P4, P5, P6, P7, P8>; \
+            case GPUJPEG_444_U16_P012O: return &gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, GPUJPEG_444_U16_P012O, 4, P1, P2, P3, P4, P5, P6, P7, P8>; \
+            case GPUJPEG_444_F32_P012O: return &gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, GPUJPEG_444_F32_P012O, 4, P1, P2, P3, P4, P5, P6, P7, P8>; \
             case GPUJPEG_422_U8_P1020: return &gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, GPUJPEG_422_U8_P1020, 3, P1, P2, P3, P4, P5, P6, P7, P8>; \
             case GPUJPEG_444_U8_P0P1P2: return &gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, GPUJPEG_444_U8_P0P1P2, 3, P1, P2, P3, P4, P5, P6, P7, P8>; \
             case GPUJPEG_422_U8_P0P1P2: return &gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, GPUJPEG_422_U8_P0P1P2, 3, P1, P2, P3, P4, P5, P6, P7, P8>; \

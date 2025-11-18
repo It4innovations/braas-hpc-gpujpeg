@@ -38,6 +38,8 @@
 #include "gpujpeg_preprocessor.h"
 #include "gpujpeg_util.h"
 
+#include <cuda_fp16.h>
+
 /**
  * Store value to component data buffer in specified position by buffer size and subsampling
  */
@@ -153,6 +155,49 @@ inline __device__ void raw_to_comp_load<GPUJPEG_444_U8_P012Z>(const uint8_t* d_d
 }
 
 template<>
+inline __device__ void raw_to_comp_load<GPUJPEG_444_U16_P012O>(const uint8_t* d_data_raw, int& image_width, int& image_height, int& image_position, int& x, int& y, uchar4& r)
+{
+    const unsigned int offset = image_position * 4;
+
+    //float scale = 255.0f;
+    half *input = (half*)d_data_raw;
+    //unsigned char* f = (unsigned char*)&r.x;
+
+    //for (int i = 0; i < 4; i++) {
+    //    float f_temp;
+    //    union {
+    //        unsigned short h;
+    //        uint16_t s;
+    //    } val;
+    //    val.h = h[i];
+
+    //    *((int*) & f_temp) = ((val.s & 0x8000) << 16) | (((val.s & 0x7c00) + 0x1C000) << 13) | ((val.s & 0x03FF) << 13);
+
+    //    f[i] = (unsigned char)(f_temp * scale);
+    //}
+
+    // Scale and clamp the values to [0, 255]
+    r.x = static_cast<uint8_t>(fminf(fmaxf(__half2float(input[offset + 0]) * 255.0f, 0.0f), 255.0f));
+    r.y = static_cast<uint8_t>(fminf(fmaxf(__half2float(input[offset + 1]) * 255.0f, 0.0f), 255.0f));
+    r.z = static_cast<uint8_t>(fminf(fmaxf(__half2float(input[offset + 2]) * 255.0f, 0.0f), 255.0f));
+    r.w = static_cast<uint8_t>(fminf(fmaxf(__half2float(input[offset + 3]) * 255.0f, 0.0f), 255.0f));
+}
+
+template<>
+inline __device__ void raw_to_comp_load<GPUJPEG_444_F32_P012O>(const uint8_t* d_data_raw, int& image_width, int& image_height, int& image_position, int& x, int& y, uchar4& r)
+{
+    image_position = image_position * 4;
+
+    float scale = 255.0f;
+    float* h = (float*)d_data_raw + image_position;
+    unsigned char* f = (unsigned char*)&r.x;
+
+    for (int i = 0; i < 4; i++) {
+        f[i] = (unsigned char)(h[i] * scale);
+    }
+}
+
+template<>
 inline __device__ void raw_to_comp_load<GPUJPEG_422_U8_P1020>(const uint8_t* d_data_raw, int &image_width, int &image_height, int &image_position, int &x, int &y, uchar4 &r)
 {
     const unsigned int offset = image_position * 2;
@@ -239,6 +284,8 @@ gpujpeg_preprocessor_select_encode_kernel(struct gpujpeg_coder* coder)
             case GPUJPEG_444_U8_P012: return &gpujpeg_preprocessor_raw_to_comp_kernel<color_space_internal, COLOR, GPUJPEG_444_U8_P012, P1, P2, P3, P4, P5, P6>; \
             case GPUJPEG_444_U8_P012A: return coder->param_image.comp_count == 4 ? &gpujpeg_preprocessor_raw_to_comp_kernel<color_space_internal, COLOR, GPUJPEG_444_U8_P012A, P1, P2, P3, P4, P5, P6> : &gpujpeg_preprocessor_raw_to_comp_kernel<color_space_internal, COLOR, GPUJPEG_444_U8_P012Z, P1, P2, P3, P4, P5, P6>; \
             case GPUJPEG_444_U8_P012Z: return  &gpujpeg_preprocessor_raw_to_comp_kernel<color_space_internal, COLOR, GPUJPEG_444_U8_P012Z, P1, P2, P3, P4, P5, P6>; \
+            case GPUJPEG_444_U16_P012O: return &gpujpeg_preprocessor_raw_to_comp_kernel<color_space_internal, COLOR, GPUJPEG_444_U16_P012O, P1, P2, P3, P4, P5, P6>; \
+            case GPUJPEG_444_F32_P012O: return &gpujpeg_preprocessor_raw_to_comp_kernel<color_space_internal, COLOR, GPUJPEG_444_F32_P012O, P1, P2, P3, P4, P5, P6>; \
             case GPUJPEG_422_U8_P1020: return &gpujpeg_preprocessor_raw_to_comp_kernel<color_space_internal, COLOR, GPUJPEG_422_U8_P1020, P1, P2, P3, P4, P5, P6>; \
             case GPUJPEG_444_U8_P0P1P2: return &gpujpeg_preprocessor_raw_to_comp_kernel<color_space_internal, COLOR, GPUJPEG_444_U8_P0P1P2, P1, P2, P3, P4, P5, P6>; \
             case GPUJPEG_422_U8_P0P1P2: return &gpujpeg_preprocessor_raw_to_comp_kernel<color_space_internal, COLOR, GPUJPEG_422_U8_P0P1P2, P1, P2, P3, P4, P5, P6>; \
