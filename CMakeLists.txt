@@ -37,7 +37,7 @@ add_definitions("-DHAVE_GPUJPEG_VERSION_H")
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 
 # Common settings
-include_directories(${CMAKE_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} ${CUDA_TOOLKIT_INCLUDE} ${CUDA_INCLUDE_DIRS})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} ${CUDA_TOOLKIT_INCLUDE} ${CUDA_INCLUDE_DIRS})
 
 set(NEEDED_COMPILER_FEATURES c_std_11 cxx_delegating_constructors cxx_nullptr)
 
@@ -132,7 +132,7 @@ message(STATUS "Configured options: ${COMPILED_OPTIONS}")
 
 # GPUJPEG library
 file(GLOB H_FILES libgpujpeg/*.h ${CMAKE_CURRENT_BINARY_DIR}/libgpujpeg/gpujpeg_version.h)
-file(GLOB_RECURSE C_FILES src/*.c src/*.cu)
+file(GLOB_RECURSE C_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cu)
 if(NOT DISABLE_CPP)
     file(GLOB_RECURSE CPP_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 endif()
@@ -148,14 +148,22 @@ if(GPUJPEG_OPENGL_ENABLED)
 endif()
 target_link_libraries(gpujpeg ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY})
 
-# GPUJPEG commmand-line application
-add_executable(gpujpeg-bin src/main.c)
-target_compile_features(gpujpeg-bin PRIVATE ${NEEDED_COMPILER_FEATURES})
-set_property(TARGET gpujpeg-bin PROPERTY C_STANDARD 99)
-target_link_libraries(gpujpeg-bin gpujpeg)
-set_target_properties(gpujpeg-bin PROPERTIES OUTPUT_NAME "gpujpeg")
+if(NOT IS_SUBMODULE)
+    # GPUJPEG commmand-line application
+    add_executable(gpujpeg-bin src/main.c)
+    target_compile_features(gpujpeg-bin PRIVATE ${NEEDED_COMPILER_FEATURES})
+    set_property(TARGET gpujpeg-bin PROPERTY C_STANDARD 99)
+    target_link_libraries(gpujpeg-bin gpujpeg)
+    set_target_properties(gpujpeg-bin PROPERTIES OUTPUT_NAME "gpujpeg")
+    install(TARGETS gpujpeg gpujpeg-bin
+            EXPORT GPUJPEGTargets
+            ARCHIVE DESTINATION lib
+            LIBRARY DESTINATION lib
+            PUBLIC_HEADER DESTINATION include/libgpujpeg
+            RUNTIME DESTINATION bin)
+endif()
 
-install(TARGETS gpujpeg gpujpeg-bin
+install(TARGETS gpujpeg
         EXPORT GPUJPEGTargets
         ARCHIVE DESTINATION lib
         LIBRARY DESTINATION lib
