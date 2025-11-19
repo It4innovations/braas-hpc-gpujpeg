@@ -23,6 +23,7 @@
 #define Portable_Anymap_Format_E84FDB3F_0BF3_447F_821D_B9480766CC13
 
 #include <cctype>
+#include <cstdint>
 #include <algorithm>
 #include <vector>
 #include <string>
