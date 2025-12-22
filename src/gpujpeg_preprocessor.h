@@ -64,11 +64,29 @@ struct gpujpeg_preprocessor_data
 };
 
 /**
+ * Kernel type for preprocessor/postprocessor
+ */
+enum gpujpeg_preprocessor_kernel_type
+{
+    GPUJPEG_KERNEL_TYPE_NONE = 0,
+    GPUJPEG_KERNEL_TYPE_ENCODE_NONE,
+    GPUJPEG_KERNEL_TYPE_ENCODE_RGB,
+    GPUJPEG_KERNEL_TYPE_ENCODE_YCBCR_BT601,
+    GPUJPEG_KERNEL_TYPE_ENCODE_YCBCR_BT601_256LVLS,
+    GPUJPEG_KERNEL_TYPE_ENCODE_YCBCR_BT709,
+    GPUJPEG_KERNEL_TYPE_DECODE_NONE,
+    GPUJPEG_KERNEL_TYPE_DECODE_RGB,
+    GPUJPEG_KERNEL_TYPE_DECODE_YCBCR_BT601,
+    GPUJPEG_KERNEL_TYPE_DECODE_YCBCR_BT601_256LVLS,
+    GPUJPEG_KERNEL_TYPE_DECODE_YCBCR_BT709
+};
+
+/**
  * Preprocessor/postprocessor state
  */
 struct gpujpeg_preprocessor
 {
-    void* kernel;       // function poitner
+    enum gpujpeg_preprocessor_kernel_type kernel_type;
     bool flipped;               ///< flip image before encode or after decode
     unsigned int channel_remap; ///< remap channels if != 0
                                 ///< format: count_8b | 00000000 | idx0_4b | idx1_4b | idx2_4b | idx3_4b

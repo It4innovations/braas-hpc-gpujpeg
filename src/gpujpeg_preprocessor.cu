@@ -315,7 +315,7 @@ gpujpeg_preprocessor_encode_no_transform(struct gpujpeg_coder *coder)
 int
 gpujpeg_preprocessor_encoder_init(struct gpujpeg_coder* coder)
 {
-    coder->preprocessor.kernel = nullptr;
+    coder->preprocessor.kernel_type = GPUJPEG_KERNEL_TYPE_NONE;
     struct gpujpeg_preprocessor_data *data = &coder->preprocessor.data;
     for ( int comp = 0; comp < coder->param.comp_count; comp++ ) {
         assert(coder->sampling_factor.horizontal % coder->component[comp].sampling_factor.horizontal == 0);
@@ -332,22 +332,32 @@ gpujpeg_preprocessor_encoder_init(struct gpujpeg_coder* coder)
     }
 
     if (coder->param.color_space_internal == GPUJPEG_NONE) {
-        coder->preprocessor.kernel = (void*)gpujpeg_preprocessor_select_encode_kernel<GPUJPEG_NONE>(coder);
+        if (gpujpeg_preprocessor_select_encode_kernel<GPUJPEG_NONE>(coder) != nullptr) {
+            coder->preprocessor.kernel_type = GPUJPEG_KERNEL_TYPE_ENCODE_NONE;
+        }
     }
     else if (coder->param.color_space_internal == GPUJPEG_RGB) {
-        coder->preprocessor.kernel = (void*)gpujpeg_preprocessor_select_encode_kernel<GPUJPEG_RGB>(coder);
+        if (gpujpeg_preprocessor_select_encode_kernel<GPUJPEG_RGB>(coder) != nullptr) {
+            coder->preprocessor.kernel_type = GPUJPEG_KERNEL_TYPE_ENCODE_RGB;
+        }
     }
     else if (coder->param.color_space_internal == GPUJPEG_YCBCR_BT601) {
-        coder->preprocessor.kernel = (void*)gpujpeg_preprocessor_select_encode_kernel<GPUJPEG_YCBCR_BT601>(coder);
+        if (gpujpeg_preprocessor_select_encode_kernel<GPUJPEG_YCBCR_BT601>(coder) != nullptr) {
+            coder->preprocessor.kernel_type = GPUJPEG_KERNEL_TYPE_ENCODE_YCBCR_BT601;
+        }
     }
     else if (coder->param.color_space_internal == GPUJPEG_YCBCR_BT601_256LVLS) {
-        coder->preprocessor.kernel = (void*)gpujpeg_preprocessor_select_encode_kernel<GPUJPEG_YCBCR_BT601_256LVLS>(coder);
+        if (gpujpeg_preprocessor_select_encode_kernel<GPUJPEG_YCBCR_BT601_256LVLS>(coder) != nullptr) {
+            coder->preprocessor.kernel_type = GPUJPEG_KERNEL_TYPE_ENCODE_YCBCR_BT601_256LVLS;
+        }
     }
     else if (coder->param.color_space_internal == GPUJPEG_YCBCR_BT709) {
-        coder->preprocessor.kernel = (void*)gpujpeg_preprocessor_select_encode_kernel<GPUJPEG_YCBCR_BT709>(coder);
+        if (gpujpeg_preprocessor_select_encode_kernel<GPUJPEG_YCBCR_BT709>(coder) != nullptr) {
+            coder->preprocessor.kernel_type = GPUJPEG_KERNEL_TYPE_ENCODE_YCBCR_BT709;
+        }
     }
 
-    if ( coder->preprocessor.kernel == nullptr ) {
+    if ( coder->preprocessor.kernel_type == GPUJPEG_KERNEL_TYPE_NONE ) {
         return -1;
     }
 
@@ -359,9 +369,29 @@ gpujpeg_preprocessor_encode_interlaced(struct gpujpeg_encoder * encoder)
 {
     struct gpujpeg_coder* coder = &encoder->coder;
 
-    // Select kernel
-    gpujpeg_preprocessor_encode_kernel kernel = (gpujpeg_preprocessor_encode_kernel) coder->preprocessor.kernel;
-    assert(kernel != NULL);
+    // Get kernel based on kernel type
+    gpujpeg_preprocessor_encode_kernel kernel = nullptr;
+    switch (coder->preprocessor.kernel_type) {
+        case GPUJPEG_KERNEL_TYPE_ENCODE_NONE:
+            kernel = gpujpeg_preprocessor_select_encode_kernel<GPUJPEG_NONE>(coder);
+            break;
+        case GPUJPEG_KERNEL_TYPE_ENCODE_RGB:
+            kernel = gpujpeg_preprocessor_select_encode_kernel<GPUJPEG_RGB>(coder);
+            break;
+        case GPUJPEG_KERNEL_TYPE_ENCODE_YCBCR_BT601:
+            kernel = gpujpeg_preprocessor_select_encode_kernel<GPUJPEG_YCBCR_BT601>(coder);
+            break;
+        case GPUJPEG_KERNEL_TYPE_ENCODE_YCBCR_BT601_256LVLS:
+            kernel = gpujpeg_preprocessor_select_encode_kernel<GPUJPEG_YCBCR_BT601_256LVLS>(coder);
+            break;
+        case GPUJPEG_KERNEL_TYPE_ENCODE_YCBCR_BT709:
+            kernel = gpujpeg_preprocessor_select_encode_kernel<GPUJPEG_YCBCR_BT709>(coder);
+            break;
+        default:
+            assert(false && "Invalid kernel type for encoding");
+            return -1;
+    }
+    assert(kernel != nullptr);
 
     int image_width = coder->param_image.width;
     int image_height = coder->param_image.height;
@@ -574,7 +604,7 @@ gpujpeg_preprocessor_encode(struct gpujpeg_encoder * encoder)
         }
     }
 
-    int ret = coder->preprocessor.kernel != nullptr ? gpujpeg_preprocessor_encode_interlaced(encoder)
+    int ret = coder->preprocessor.kernel_type != GPUJPEG_KERNEL_TYPE_NONE ? gpujpeg_preprocessor_encode_interlaced(encoder)
                                                     : gpujpeg_preprocessor_encoder_copy_planar_data(encoder);
     if (ret != 0) {
         return ret;
