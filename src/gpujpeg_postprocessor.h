@@ -56,7 +56,7 @@ gpujpeg_postprocessor_decoder_init(struct gpujpeg_coder* coder);
  * @retval -2 JPEG with source subsampling cannot be decoded to specified planar pixel format
  */
 int
-gpujpeg_postprocessor_decode(struct gpujpeg_coder* coder, cudaStream_t stream);
+gpujpeg_postprocessor_decode(struct gpujpeg_coder* coder, gpuStream_t stream);
 
 #ifdef __cplusplus
 }

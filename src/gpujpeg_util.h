@@ -36,7 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#include <cuda_runtime.h>
+#include "gpujpeg_device_compat.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,13 +44,13 @@ extern "C" {
 
 #define GPUJPEG_CLAMP(x, low, high)  (((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
     
-// CUDA check error
+// GPU check error
 #define gpujpeg_cuda_check_error(msg, action) \
     { \
-        cudaError_t err = cudaGetLastError(); \
-        if( cudaSuccess != err) { \
+        gpuError_t err = gpuGetLastError(); \
+        if( gpuSuccess != err) { \
             fprintf(stderr, "[GPUJPEG] [Error] %s (line %i): %s: %s.\n", \
-                __FILE__, __LINE__, msg, cudaGetErrorString( err) ); \
+                __FILE__, __LINE__, msg, gpuGetErrorString( err) ); \
             action; \
         } \
     } \

@@ -43,12 +43,17 @@
 #include "gpujpeg_type.h"
 
 /**
- * @todo
- * Remove the redefinition and instead of cudaStream_t use a typedef to (void *).
+ * Stream type for GPU operations (CUDA/HIP/SYCL compatible)
+ * Uses opaque pointer for maximum compatibility across backends.
  */
 #ifndef __DRIVER_TYPES_H__
 struct CUstream_st;
 typedef struct CUstream_st *cudaStream_t;
+#endif
+
+// For internal use, include device compatibility layer
+#ifdef GPUJPEG_INTERNAL_BUILD
+#include "../src/gpujpeg_device_compat.h"
 #endif
 
 #if __cplusplus >= 201402L || __STDC_VERSION__ >= 202311L

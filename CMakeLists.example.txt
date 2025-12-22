@@ -1,0 +1,198 @@
+# Example CMakeLists.txt modifications for GPU compatibility
+# This file shows how to integrate the CUDA/HIP/SYCL compatibility layer
+
+# Option to select GPU backend
+option(GPUJPEG_USE_HIP "Build with HIP backend for AMD GPUs" OFF)
+option(GPUJPEG_USE_SYCL "Build with SYCL backend for Intel/other GPUs" OFF)
+
+# Determine GPU backend
+if(GPUJPEG_USE_HIP)
+    set(GPU_BACKEND "HIP")
+    message(STATUS "Building GPUJPEG with HIP backend for AMD GPUs")
+    
+    # Enable HIP language
+    if(NOT DEFINED CMAKE_HIP_COMPILER)
+        find_program(CMAKE_HIP_COMPILER NAMES hipcc)
+    endif()
+    
+    if(CMAKE_HIP_COMPILER)
+        enable_language(HIP)
+    else()
+        message(FATAL_ERROR "HIP compiler not found. Please install ROCm.")
+    endif()
+    
+    add_compile_definitions(GPUJPEG_USE_HIP)
+    
+elseif(GPUJPEG_USE_SYCL)
+    set(GPU_BACKEND "SYCL")
+    message(STATUS "Building GPUJPEG with SYCL backend for Intel GPUs")
+    
+    # Find Intel DPC++/SYCL compiler
+    if(NOT CMAKE_CXX_COMPILER MATCHES "icpx|dpcpp")
+        message(WARNING "SYCL backend requires Intel DPC++ compiler (icpx). "
+                        "Please set CMAKE_CXX_COMPILER to icpx or dpcpp.")
+    endif()
+    
+    add_compile_definitions(GPUJPEG_USE_SYCL)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl")
+    
+else()
+    set(GPU_BACKEND "CUDA")
+    message(STATUS "Building GPUJPEG with CUDA backend (default)")
+    
+    # Find CUDA
+    find_package(CUDA REQUIRED)
+    if(NOT CMAKE_CUDA_COMPILER)
+        set(CMAKE_CUDA_COMPILER ${CUDA_NVCC_EXECUTABLE})
+    endif()
+    
+    enable_language(CUDA)
+    add_compile_definitions(GPUJPEG_USE_CUDA)
+endif()
+
+# Common source files (.c files)
+set(GPUJPEG_COMMON_SOURCES
+    src/gpujpeg_common.c
+    src/gpujpeg_dct_cpu.c
+    src/gpujpeg_decoder.c
+    src/gpujpeg_encoder.c
+    src/gpujpeg_exif.c
+    src/gpujpeg_huffman_cpu_decoder.c
+    src/gpujpeg_huffman_cpu_encoder.c
+    src/gpujpeg_reader.c
+    src/gpujpeg_table.c
+    src/gpujpeg_writer.c
+    src/utils/getopt.c
+    src/utils/image_delegate.c
+    src/utils/pam.c
+    src/utils/y4m.c
+)
+
+# GPU kernel sources - different per backend
+if(GPU_BACKEND STREQUAL "CUDA")
+    # Use .cu files directly for CUDA
+    set(GPUJPEG_GPU_SOURCES
+        src/gpujpeg_dct_gpu.cu
+        src/gpujpeg_huffman_gpu_decoder.cu
+        src/gpujpeg_huffman_gpu_encoder.cu
+        src/gpujpeg_postprocessor.cu
+        src/gpujpeg_preprocessor.cu
+    )
+    
+    # CUDA-specific compiler flags
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -fPIC")
+    
+    # Set CUDA architecture (adjust as needed)
+    if(NOT CMAKE_CUDA_ARCHITECTURES)
+        set(CMAKE_CUDA_ARCHITECTURES 52 60 61 70 75 80 86)
+    endif()
+    
+elseif(GPU_BACKEND STREQUAL "HIP")
+    # Use .cpp wrappers that include .cu files for HIP
+    set(GPUJPEG_GPU_SOURCES
+        src/gpujpeg_dct_gpu.cpp
+        src/gpujpeg_huffman_gpu_decoder.cpp
+        src/gpujpeg_huffman_gpu_encoder.cpp
+        src/gpujpeg_postprocessor.cpp
+        src/gpujpeg_preprocessor.cpp
+    )
+    
+    # HIP-specific compiler flags
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+    
+    # Optionally specify GPU architecture for HIP
+    # set(CMAKE_HIP_ARCHITECTURES gfx906 gfx908 gfx90a gfx1030)
+    
+elseif(GPU_BACKEND STREQUAL "SYCL")
+    # SYCL compatibility layer implementation
+    set(GPUJPEG_GPU_SOURCES
+        src/gpujpeg_device_compat_sycl.cpp
+        # Note: SYCL requires kernel rewrites, .cu files won't work directly
+        # You would need to add SYCL kernel implementations here
+    )
+    
+    # SYCL-specific compiler flags
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl -fPIC")
+    
+endif()
+
+# Create the library
+add_library(gpujpeg ${GPUJPEG_COMMON_SOURCES} ${GPUJPEG_GPU_SOURCES})
+
+# Set C++11 minimum for compatibility layer
+target_compile_features(gpujpeg PRIVATE cxx_std_11)
+
+# Include directories
+target_include_directories(gpujpeg
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/libgpujpeg>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+# Link GPU runtime libraries
+if(GPU_BACKEND STREQUAL "CUDA")
+    target_link_libraries(gpujpeg
+        PRIVATE
+            ${CUDA_LIBRARIES}
+    )
+    target_include_directories(gpujpeg
+        PRIVATE
+            ${CUDA_INCLUDE_DIRS}
+    )
+    
+elseif(GPU_BACKEND STREQUAL "HIP")
+    # Find HIP package
+    find_package(hip REQUIRED)
+    target_link_libraries(gpujpeg
+        PRIVATE
+            hip::host
+    )
+    
+elseif(GPU_BACKEND STREQUAL "SYCL")
+    # SYCL runtime is linked via compiler flags
+    # Optionally link additional SYCL libraries if needed
+    # find_package(IntelSYCL REQUIRED)
+    # target_link_libraries(gpujpeg PRIVATE IntelSYCL::SYCL)
+endif()
+
+# Define internal build flag
+target_compile_definitions(gpujpeg PRIVATE GPUJPEG_INTERNAL_BUILD)
+
+# Export library
+if(BUILD_SHARED_LIBS)
+    target_compile_definitions(gpujpeg PRIVATE GPUJPEG_EXPORTS)
+endif()
+
+# Installation rules
+install(TARGETS gpujpeg
+    EXPORT gpujpeg-targets
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
+)
+
+install(DIRECTORY libgpujpeg/
+    DESTINATION include/libgpujpeg
+    FILES_MATCHING PATTERN "*.h"
+)
+
+# Print configuration summary
+message(STATUS "")
+message(STATUS "GPUJPEG Configuration Summary:")
+message(STATUS "  GPU Backend: ${GPU_BACKEND}")
+message(STATUS "  Build type: ${CMAKE_BUILD_TYPE}")
+if(GPU_BACKEND STREQUAL "CUDA")
+    message(STATUS "  CUDA Version: ${CUDA_VERSION}")
+    message(STATUS "  CUDA Compiler: ${CMAKE_CUDA_COMPILER}")
+    message(STATUS "  CUDA Architectures: ${CMAKE_CUDA_ARCHITECTURES}")
+elseif(GPU_BACKEND STREQUAL "HIP")
+    message(STATUS "  HIP Compiler: ${CMAKE_HIP_COMPILER}")
+    if(CMAKE_HIP_ARCHITECTURES)
+        message(STATUS "  HIP Architectures: ${CMAKE_HIP_ARCHITECTURES}")
+    endif()
+elseif(GPU_BACKEND STREQUAL "SYCL")
+    message(STATUS "  SYCL Compiler: ${CMAKE_CXX_COMPILER}")
+endif()
+message(STATUS "")

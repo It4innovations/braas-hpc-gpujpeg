@@ -35,7 +35,7 @@
 #ifndef GPUJPEG_COMMON_INTERNAL_H
 #define GPUJPEG_COMMON_INTERNAL_H
 
-#include <cuda_runtime.h>
+#include "gpujpeg_device_compat.h"
 #include <math.h> // NAN
 #include <stdio.h>
 #include <stdlib.h>
@@ -155,21 +155,21 @@ extern const char *gj_term_reset;
 
 struct gpujpeg_timer {
     int started;
-    cudaEvent_t start;
-    cudaEvent_t stop;
+    gpuEvent_t start;
+    gpuEvent_t stop;
 };
 
 #define GPUJPEG_CUSTOM_TIMER_CREATE(name, err_action) \
     do { \
-        GPUJPEG_CHECK(cudaEventCreate(&(name).start), err_action); \
-        GPUJPEG_CHECK(cudaEventCreate(&(name).stop), err_action); \
+        GPUJPEG_CHECK(gpuEventCreate(&(name).start), err_action); \
+        GPUJPEG_CHECK(gpuEventCreate(&(name).stop), err_action); \
         (name).started = 0; \
     } while (0)
 
 #define GPUJPEG_CUSTOM_TIMER_DESTROY(name, err_action) \
     do { \
-        GPUJPEG_CHECK(cudaEventDestroy((name).start), err_action); \
-        GPUJPEG_CHECK(cudaEventDestroy((name).stop), err_action); \
+        GPUJPEG_CHECK(gpuEventDestroy((name).start), err_action); \
+        GPUJPEG_CHECK(gpuEventDestroy((name).stop), err_action); \
     } while (0)
 
 /**
@@ -181,7 +181,7 @@ struct gpujpeg_timer {
 #define GPUJPEG_CUSTOM_TIMER_START(name, record_perf, stream, err_action) \
     if (record_perf) { \
         (name).started = 1; \
-        GPUJPEG_CHECK(cudaEventRecord((name).start, stream), err_action); \
+        GPUJPEG_CHECK(gpuEventRecord((name).start, stream), err_action); \
     } else { \
         (name).started = -1; \
     }
@@ -193,7 +193,7 @@ struct gpujpeg_timer {
  */
 #define GPUJPEG_CUSTOM_TIMER_STOP(name, record_perf, stream, err_action) \
     if (record_perf) { \
-        GPUJPEG_CHECK(cudaEventRecord((name).stop, stream), err_action); \
+        GPUJPEG_CHECK(gpuEventRecord((name).stop, stream), err_action); \
     }
 
 /**
@@ -430,7 +430,7 @@ struct gpujpeg_coder
     int encoder; ///< 1 if we are encoder, 0 decoder
 
     // Stream
-    cudaStream_t stream;
+    gpuStream_t stream;
 };
 
 /**
