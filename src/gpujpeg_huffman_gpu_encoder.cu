@@ -980,14 +980,14 @@ gpujpeg_huffman_gpu_encoder_create(const struct gpujpeg_encoder * encoder)
     memset(huffman_gpu_encoder, 0, sizeof(struct gpujpeg_huffman_gpu_encoder));
 
     // Allocate
-    cudaMalloc((void**)&huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count, sizeof(unsigned int));
-    gpujpeg_cuda_check_error("Allocation of huffman output byte count failed", return NULL);
+    if (gpuMalloc((void**)&huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count, sizeof(unsigned int)) != gpuSuccess)
+        gpujpeg_cuda_check_error("Allocation of huffman output byte count failed", return NULL);
 
     // Initialize decomposition lookup table
-    cudaFuncSetCacheConfig(gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel, cudaFuncCachePreferShared);
+    (void)gpuFuncSetCacheConfig((const void*)gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel, gpuFuncCachePreferShared);
     gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel<<<32, 256, 0, coder->stream>>>();  // 8192 threads total
-    cudaStreamSynchronize(coder->stream);
-    gpujpeg_cuda_check_error("Decomposition LUT initialization failed", return NULL);
+    if (gpuStreamSynchronize(coder->stream) != gpuSuccess)
+        gpujpeg_cuda_check_error("Decomposition LUT initialization failed", return NULL);
 
     // compose GPU version of the huffman LUT and copy it into GPU memory (for CC >= 2.0)
     uint32_t gpujpeg_huffman_cpu_lut[(256 + 1) * 4];
@@ -995,42 +995,42 @@ gpujpeg_huffman_gpu_encoder_create(const struct gpujpeg_encoder * encoder)
     gpujpeg_huffman_gpu_add_packed_table(gpujpeg_huffman_cpu_lut + 257 * 1, &encoder->table_huffman[GPUJPEG_COMPONENT_LUMINANCE][GPUJPEG_HUFFMAN_DC], false);
     gpujpeg_huffman_gpu_add_packed_table(gpujpeg_huffman_cpu_lut + 257 * 2, &encoder->table_huffman[GPUJPEG_COMPONENT_CHROMINANCE][GPUJPEG_HUFFMAN_AC], true);
     gpujpeg_huffman_gpu_add_packed_table(gpujpeg_huffman_cpu_lut + 257 * 3, &encoder->table_huffman[GPUJPEG_COMPONENT_CHROMINANCE][GPUJPEG_HUFFMAN_DC], false);
-    cudaMemcpyToSymbol(
+    if (gpuMemcpyToSymbol(
         gpujpeg_huffman_gpu_lut,
         gpujpeg_huffman_cpu_lut,
         (256 + 1) * 4 * sizeof(*gpujpeg_huffman_gpu_lut),
         0,
-        cudaMemcpyHostToDevice
-    );
-    gpujpeg_cuda_check_error("Huffman encoder init (Huffman LUT copy)", return NULL);
+        gpuMemcpyHostToDevice
+    ) != gpuSuccess)
+        gpujpeg_cuda_check_error("Huffman encoder init (Huffman LUT copy)", return NULL);
 
     // Copy original Huffman coding tables to GPU memory (for CC 1.x)
-    cudaMemcpyToSymbol(
+    if (gpuMemcpyToSymbol(
         gpujpeg_huffman_gpu_encoder_table_huffman,
         &encoder->table_huffman[GPUJPEG_COMPONENT_LUMINANCE][GPUJPEG_HUFFMAN_DC],
         sizeof(gpujpeg_huffman_gpu_encoder_table_huffman),
         0,
-        cudaMemcpyHostToDevice
-    );
-    gpujpeg_cuda_check_error("Huffman encoder init (Huffman coding table)", return NULL);
+        gpuMemcpyHostToDevice
+    ) != gpuSuccess)
+        gpujpeg_cuda_check_error("Huffman encoder init (Huffman coding table)", return NULL);
 
     // Copy natural order to constant device memory
-    cudaMemcpyToSymbol(
+    if (gpuMemcpyToSymbol(
         gpujpeg_huffman_gpu_encoder_order_natural,
         gpujpeg_order_natural,
         GPUJPEG_ORDER_NATURAL_SIZE * sizeof(int),
         0,
-        cudaMemcpyHostToDevice
-    );
-    gpujpeg_cuda_check_error("Huffman encoder init (natural order copy)", return NULL);
+        gpuMemcpyHostToDevice
+    ) != gpuSuccess)
+        gpujpeg_cuda_check_error("Huffman encoder init (natural order copy)", return NULL);
 
     // Configure more shared memory for all kernels
-    cudaFuncSetCacheConfig(gpujpeg_huffman_encoder_encode_kernel_warp<true>, cudaFuncCachePreferShared);
-    cudaFuncSetCacheConfig(gpujpeg_huffman_encoder_encode_kernel_warp<false>, cudaFuncCachePreferShared);
-    cudaFuncSetCacheConfig(gpujpeg_huffman_encoder_serialization_kernel, cudaFuncCachePreferShared);
-    cudaFuncSetCacheConfig(gpujpeg_huffman_encoder_compaction_kernel, cudaFuncCachePreferShared);
-    cudaFuncSetCacheConfig(gpujpeg_huffman_encoder_encode_kernel, cudaFuncCachePreferShared);
-    cudaFuncSetCacheConfig(gpujpeg_huffman_encoder_allocation_kernel, cudaFuncCachePreferShared);
+    (void)gpuFuncSetCacheConfig((const void*)gpujpeg_huffman_encoder_encode_kernel_warp<true>, gpuFuncCachePreferShared);
+    (void)gpuFuncSetCacheConfig((const void*)gpujpeg_huffman_encoder_encode_kernel_warp<false>, gpuFuncCachePreferShared);
+    (void)gpuFuncSetCacheConfig((const void*)gpujpeg_huffman_encoder_serialization_kernel, gpuFuncCachePreferShared);
+    (void)gpuFuncSetCacheConfig((const void*)gpujpeg_huffman_encoder_compaction_kernel, gpuFuncCachePreferShared);
+    (void)gpuFuncSetCacheConfig((const void*)gpujpeg_huffman_encoder_encode_kernel, gpuFuncCachePreferShared);
+    (void)gpuFuncSetCacheConfig((const void*)gpujpeg_huffman_encoder_allocation_kernel, gpuFuncCachePreferShared);
 
     return huffman_gpu_encoder;
 }
@@ -1041,7 +1041,7 @@ gpujpeg_huffman_gpu_encoder_destroy(struct gpujpeg_huffman_gpu_encoder * huffman
     assert(huffman_gpu_encoder != NULL);
 
     if (huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count != NULL) {
-        cudaFree(huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count);
+        (void)gpuFree(huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count);
     }
 
     free(huffman_gpu_encoder);
@@ -1158,9 +1158,9 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
     gpujpeg_cuda_check_error("Huffman output compaction failed", return -1);
 
     // Read and return number of occupied bytes
-    cudaMemcpyAsync(output_byte_count, huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count, sizeof(unsigned int),
-                    cudaMemcpyDeviceToHost, coder->stream);
-    gpujpeg_cuda_check_error("Huffman output size getting failed", return -1);
+    if (gpuMemcpyAsync(output_byte_count, huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count, sizeof(unsigned int),
+                    gpuMemcpyDeviceToHost, coder->stream) != gpuSuccess)
+        gpujpeg_cuda_check_error("Huffman output size getting failed", return -1);
 
     // indicate success
     return 0;

@@ -49,7 +49,6 @@ gpujpeg_decoder_output_set_default(struct gpujpeg_decoder_output* output)
     output->type = GPUJPEG_DECODER_OUTPUT_INTERNAL_BUFFER;
     output->data = NULL;
     output->data_size = 0;
-    output->texture = NULL;
 }
 
 /* Documented at declaration */
@@ -59,17 +58,6 @@ gpujpeg_decoder_output_set_custom(struct gpujpeg_decoder_output* output, uint8_t
     output->type = GPUJPEG_DECODER_OUTPUT_CUSTOM_BUFFER;
     output->data = custom_buffer;
     output->data_size = 0;
-    output->texture = NULL;
-}
-
-/* Documented at declaration */
-void
-gpujpeg_decoder_output_set_texture(struct gpujpeg_decoder_output* output, struct gpujpeg_opengl_texture* texture)
-{
-    output->type = GPUJPEG_DECODER_OUTPUT_OPENGL_TEXTURE;
-    output->data = NULL;
-    output->data_size = 0;
-    output->texture = texture;
 }
 
 /* Documented at declaration */
@@ -79,7 +67,6 @@ gpujpeg_decoder_output_set_cuda_buffer(struct gpujpeg_decoder_output* output)
     output->type = GPUJPEG_DECODER_OUTPUT_CUDA_BUFFER;
     output->data = NULL;
     output->data_size = 0;
-    output->texture = NULL;
 }
 
 /* Documented at declaration */
@@ -89,12 +76,11 @@ gpujpeg_decoder_output_set_custom_cuda(struct gpujpeg_decoder_output* output, ui
     output->type = GPUJPEG_DECODER_OUTPUT_CUSTOM_CUDA_BUFFER;
     output->data = d_custom_buffer;
     output->data_size = 0;
-    output->texture = NULL;
 }
 
 /* Documented at declaration */
 struct gpujpeg_decoder*
-gpujpeg_decoder_create(cudaStream_t stream)
+gpujpeg_decoder_create(gpuStream_t stream)
 {
     gpujpeg_init_term_colors();
     struct gpujpeg_decoder* decoder = (struct gpujpeg_decoder*) calloc(1, sizeof(struct gpujpeg_decoder));
@@ -123,17 +109,17 @@ gpujpeg_decoder_create(cudaStream_t stream)
 
     // Allocate quantization tables in device memory
     for ( int comp_type = 0; comp_type < GPUJPEG_MAX_COMPONENT_COUNT; comp_type++ ) {
-        if ( cudaSuccess != cudaMalloc((void**)&decoder->table_quantization[comp_type].d_table, 64 * sizeof(uint16_t)) )
+        if ( gpuSuccess != gpuMalloc((void**)&decoder->table_quantization[comp_type].d_table, 64 * sizeof(uint16_t)) )
             result = 0;
     }
     // Allocate huffman tables in device memory
     for ( int comp_type = 0; comp_type < GPUJPEG_MAX_COMPONENT_COUNT; comp_type++ ) {
         for ( int huff_type = 0; huff_type < GPUJPEG_HUFFMAN_TYPE_COUNT; huff_type++ ) {
-            if ( cudaSuccess != cudaMalloc((void**)&decoder->d_table_huffman[comp_type][huff_type], sizeof(struct gpujpeg_table_huffman_decoder)) )
+            if ( gpuSuccess != gpuMalloc((void**)&decoder->d_table_huffman[comp_type][huff_type], sizeof(struct gpujpeg_table_huffman_decoder)) )
                 result = 0;
             // gpujpeg_huffman_decoder_table_kernel() computes quick tables for 2 pair of Huffman tables, but eg. for grayscale only one pair is
             // present which causes the function potentially crash because computing from garbage values - memsetting to 0 fixes that
-            if ( cudaSuccess != cudaMemset(decoder->d_table_huffman[comp_type][huff_type], 0, sizeof(struct gpujpeg_table_huffman_decoder)) ) {
+            if ( gpuSuccess != gpuMemset(decoder->d_table_huffman[comp_type][huff_type], 0, sizeof(struct gpujpeg_table_huffman_decoder)) ) {
                 result = 0;
             }
         }
@@ -159,7 +145,7 @@ gpujpeg_decoder_create(cudaStream_t stream)
 struct gpujpeg_decoder_init_parameters
 gpujpeg_decoder_default_init_parameters()
 {
-    return (struct gpujpeg_decoder_init_parameters){cudaStreamDefault, 0, false, false};
+    return (struct gpujpeg_decoder_init_parameters){gpuStreamDefault, 0, false, false};
 }
 /**
  * Create JPEG decoder
@@ -287,8 +273,8 @@ gpujpeg_decoder_decode(struct gpujpeg_decoder* decoder, uint8_t* image, size_t i
 
         // Copy quantized data to device memory from cpu memory
         GPUJPEG_CUSTOM_TIMER_START(coder->duration_memory_to, coder->param.perf_stats, coder->stream, return -1);
-        cudaMemcpyAsync(coder->d_data_quantized, coder->data_quantized, coder->data_size * sizeof(int16_t),
-                        cudaMemcpyHostToDevice, coder->stream);
+        gpuMemcpyAsync(coder->d_data_quantized, coder->data_quantized, coder->data_size * sizeof(int16_t),
+                        gpuMemcpyHostToDevice, coder->stream);
         GPUJPEG_CUSTOM_TIMER_STOP(coder->duration_memory_to, coder->param.perf_stats, coder->stream, return -1);
 
         GPUJPEG_CUSTOM_TIMER_START(coder->duration_in_gpu, coder->param.perf_stats, coder->stream, return -1);
@@ -298,17 +284,17 @@ gpujpeg_decoder_decode(struct gpujpeg_decoder* decoder, uint8_t* image, size_t i
         GPUJPEG_CUSTOM_TIMER_START(coder->duration_memory_to, coder->param.perf_stats, coder->stream, return -1);
 
         // Reset huffman output
-        cudaMemsetAsync(coder->d_data_quantized, 0, coder->data_size * sizeof(int16_t), coder->stream);
+        gpuMemsetAsync(coder->d_data_quantized, 0, coder->data_size * sizeof(int16_t), coder->stream);
 
         // Copy scan data to device memory
         gpujpeg_cuda_memcpy_async_partially_pinned(coder->d_data_compressed, coder->data_compressed, decoder->data_compressed_size,
-                                                   cudaMemcpyHostToDevice, coder->stream,
+                                                   gpuMemcpyHostToDevice, coder->stream,
                                                    coder->data_compressed_pinned_sz);
         gpujpeg_cuda_check_error("Decoder copy compressed data to memory", return -1);
 
         // Copy segments to device memory
-        cudaMemcpyAsync(coder->d_segment, coder->segment, decoder->segment_count * sizeof(struct gpujpeg_segment),
-                        cudaMemcpyHostToDevice, coder->stream);
+        gpuMemcpyAsync(coder->d_segment, coder->segment, decoder->segment_count * sizeof(struct gpujpeg_segment),
+                        gpuMemcpyHostToDevice, coder->stream);
         gpujpeg_cuda_check_error("Decoder copy compressed data", return -1);
 
         GPUJPEG_CUSTOM_TIMER_STOP(coder->duration_memory_to, coder->param.perf_stats, coder->stream, return -1);
@@ -339,14 +325,14 @@ gpujpeg_decoder_decode(struct gpujpeg_decoder* decoder, uint8_t* image, size_t i
 
         // (Re)allocate raw data in host memory
         if ( coder->data_raw != NULL ) {
-            cudaFreeHost(coder->data_raw);
+            gpuFreeHost(coder->data_raw);
         }
         coder->data_raw = NULL;
-        cudaMallocHost((void**)&coder->data_raw, coder->data_raw_size * sizeof(uint8_t));
+        gpuMallocHost((void**)&coder->data_raw, coder->data_raw_size * sizeof(uint8_t));
         // (Re)allocate raw data in device memory
-        cudaFree(coder->d_data_raw_allocated);
+        gpuFree(coder->d_data_raw_allocated);
         coder->d_data_raw_allocated = NULL;
-        cudaMalloc((void**)&coder->d_data_raw_allocated, coder->data_raw_size * sizeof(uint8_t));
+        gpuMalloc((void**)&coder->d_data_raw_allocated, coder->data_raw_size * sizeof(uint8_t));
 
         gpujpeg_cuda_check_error("Decoder raw data allocation", return -1);
         coder->data_raw_allocated_size = coder->data_raw_size;
@@ -357,16 +343,9 @@ gpujpeg_decoder_decode(struct gpujpeg_decoder* decoder, uint8_t* image, size_t i
         // Image should be directly decoded into custom CUDA buffer
         coder->d_data_raw = output->data;
     }
-    else if (output->type == GPUJPEG_DECODER_OUTPUT_OPENGL_TEXTURE && output->texture->texture_callback_attach_opengl == NULL) {
-        GPUJPEG_CUSTOM_TIMER_START(coder->duration_memory_map, coder->param.perf_stats, coder->stream, return -1);
-
-        // Use OpenGL texture as decoding destination
-        size_t data_size = 0;
-        uint8_t* d_data = gpujpeg_opengl_texture_map(output->texture, &data_size);
-        assert(data_size == coder->data_raw_size);
-        coder->d_data_raw = d_data;
-
-        GPUJPEG_CUSTOM_TIMER_STOP(coder->duration_memory_map, coder->param.perf_stats, coder->stream, return -1);
+    else if (output->type == GPUJPEG_DECODER_OUTPUT_OPENGL_TEXTURE) {
+        fprintf(stderr, "[GPUJPEG] [Error] OpenGL texture output not supported\\n");
+        return -1;
     }
     else {
         // Use internal CUDA buffer as decoding destination
@@ -382,7 +361,7 @@ gpujpeg_decoder_decode(struct gpujpeg_decoder* decoder, uint8_t* image, size_t i
     GPUJPEG_CUSTOM_TIMER_STOP(coder->duration_preprocessor, coder->param.perf_stats, coder->stream, return -1);
 
     // Wait for async operations before copying from the device
-    cudaStreamSynchronize(coder->stream);
+    gpuStreamSynchronize(coder->stream);
 
     GPUJPEG_CUSTOM_TIMER_STOP(coder->duration_in_gpu, coder->param.perf_stats, coder->stream, return -1);
 
@@ -398,7 +377,7 @@ gpujpeg_decoder_decode(struct gpujpeg_decoder* decoder, uint8_t* image, size_t i
         GPUJPEG_CUSTOM_TIMER_START(coder->duration_memory_from, coder->param.perf_stats, coder->stream, return -1);
 
         // Copy decompressed image to host memory
-        cudaMemcpy(coder->data_raw, coder->d_data_raw, coder->data_raw_size * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+        gpuMemcpy(coder->data_raw, coder->d_data_raw, coder->data_raw_size * sizeof(uint8_t), gpuMemcpyDeviceToHost);
 
         GPUJPEG_CUSTOM_TIMER_STOP(coder->duration_memory_from, coder->param.perf_stats, coder->stream, return -1);
 
@@ -411,36 +390,9 @@ gpujpeg_decoder_decode(struct gpujpeg_decoder* decoder, uint8_t* image, size_t i
         assert(output->data != NULL);
 
         // Copy decompressed image to host memory
-        cudaMemcpy(output->data, coder->d_data_raw, coder->data_raw_size * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+        gpuMemcpy(output->data, coder->d_data_raw, coder->data_raw_size * sizeof(uint8_t), gpuMemcpyDeviceToHost);
 
         GPUJPEG_CUSTOM_TIMER_STOP(coder->duration_memory_from, coder->param.perf_stats, coder->stream, return -1);
-    }
-    else if (output->type == GPUJPEG_DECODER_OUTPUT_OPENGL_TEXTURE) {
-        // If OpenGL texture wasn't mapped and used directly for decoding into it
-        if (output->texture->texture_callback_attach_opengl != NULL) {
-            GPUJPEG_CUSTOM_TIMER_START(coder->duration_memory_map, coder->param.perf_stats, coder->stream, return -1);
-
-            // Map OpenGL texture
-            size_t data_size = 0;
-            uint8_t* d_data = gpujpeg_opengl_texture_map(output->texture, &data_size);
-            assert(data_size == coder->data_raw_size);
-
-            GPUJPEG_CUSTOM_TIMER_STOP(coder->duration_memory_map, coder->param.perf_stats, coder->stream, return -1);
-
-            GPUJPEG_CUSTOM_TIMER_START(coder->duration_memory_from, coder->param.perf_stats, coder->stream, return -1);
-
-            // Copy decompressed image to texture pixel buffer object device data
-            cudaMemcpy(d_data, coder->d_data_raw, coder->data_raw_size * sizeof(uint8_t), cudaMemcpyDeviceToDevice);
-
-            GPUJPEG_CUSTOM_TIMER_STOP(coder->duration_memory_from, coder->param.perf_stats, coder->stream, return -1);
-        }
-
-        GPUJPEG_CUSTOM_TIMER_START(coder->duration_memory_unmap, coder->param.perf_stats, coder->stream, return -1);
-
-        // Unmap OpenGL texture
-        gpujpeg_opengl_texture_unmap(output->texture);
-
-        GPUJPEG_CUSTOM_TIMER_STOP(coder->duration_memory_unmap, coder->param.perf_stats, coder->stream, return -1);
     }
     else if (output->type == GPUJPEG_DECODER_OUTPUT_CUDA_BUFFER) {
         // Copy decompressed image to texture pixel buffer object device data
@@ -531,13 +483,13 @@ gpujpeg_decoder_destroy(struct gpujpeg_decoder* decoder)
 
     for (int comp_type = 0; comp_type < GPUJPEG_MAX_COMPONENT_COUNT; comp_type++) {
         if (decoder->table_quantization[comp_type].d_table != NULL) {
-            cudaFree(decoder->table_quantization[comp_type].d_table);
+            gpuFree(decoder->table_quantization[comp_type].d_table);
         }
     }
 
     for ( int comp_type = 0; comp_type < GPUJPEG_MAX_COMPONENT_COUNT; comp_type++ ) {
         for ( int huff_type = 0; huff_type < GPUJPEG_HUFFMAN_TYPE_COUNT; huff_type++ ) {
-            cudaFree(decoder->d_table_huffman[comp_type][huff_type]);
+            gpuFree(decoder->d_table_huffman[comp_type][huff_type]);
         }
     }
 

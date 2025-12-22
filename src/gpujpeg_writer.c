@@ -51,7 +51,7 @@ static void free_buffer(struct gpujpeg_writer *writer) {
         return;
     }
     if ( writer->buffer_pinned ) {
-        cudaFreeHost(writer->buffer);
+        gpuFreeHost(writer->buffer);
     }
     else {
         free(writer->buffer);
@@ -71,7 +71,7 @@ gpujpeg_writer_init(struct gpujpeg_writer* writer, int comp_count, struct gpujpe
         writer->buffer_allocated_size = 0;
         free_buffer(writer);
         if ( writer->buffer_pinned ) {
-            cudaMallocHost((void**)&writer->buffer, buffer_size * sizeof(uint8_t));
+            gpuMallocHost((void**)&writer->buffer, buffer_size * sizeof(uint8_t));
         }
         else {
             writer->buffer = (uint8_t*)malloc(buffer_size * sizeof(uint8_t));

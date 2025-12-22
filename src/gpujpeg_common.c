@@ -51,19 +51,6 @@
   #include <strings.h>
   #include <unistd.h>                       // for isatty
 #endif
-#ifdef GPUJPEG_USE_OPENGL
-    #define GL_GLEXT_PROTOTYPES
-    #include <GL/glew.h>
-    #ifndef GL_VERSION_1_2
-        #error "OpenGL 1.2 is required"
-    #endif
-    #if defined(GPUJPEG_USE_GLFW)
-        #include <GLFW/glfw3.h>
-    #elif defined(GPUJPEG_USE_GLX)
-        #include <GL/glx.h>
-    #endif
-    #include <cuda_gl_interop.h>
-#endif
 
 #if _STDC_VERSION__ >= 201112L
 #include <threads.h>
@@ -157,7 +144,7 @@ gpujpeg_get_devices_info(void)
 {
     struct gpujpeg_devices_info devices_info = { 0 };
 
-    cudaGetDeviceCount(&devices_info.device_count);
+    gpuGetDeviceCount(&devices_info.device_count);
     gpujpeg_cuda_check_error("Cannot get number of CUDA devices", return devices_info);
 
     if ( devices_info.device_count > GPUJPEG_MAX_DEVICE_COUNT ) {
@@ -168,8 +155,8 @@ gpujpeg_get_devices_info(void)
     }
 
     for ( int device_id = 0; device_id < devices_info.device_count; device_id++ ) {
-        struct cudaDeviceProp device_properties;
-        cudaGetDeviceProperties(&device_properties, device_id);
+        struct gpuDeviceProp device_properties;
+        gpuGetDeviceProperties(&device_properties, device_id);
 
         struct gpujpeg_device_info* device_info = &devices_info.device[device_id];
 
@@ -221,7 +208,7 @@ int
 gpujpeg_init_device(int device_id, int flags)
 {
     int dev_count;
-    cudaGetDeviceCount(&dev_count);
+    gpuGetDeviceCount(&dev_count);
     gpujpeg_cuda_check_error("Cannot get number of CUDA devices", return -1);
     if ( dev_count == 0 ) {
         fprintf(stderr, "[GPUJPEG] [Error] No CUDA enabled device\n");
@@ -234,8 +221,8 @@ gpujpeg_init_device(int device_id, int flags)
         return -1;
     }
 
-    struct cudaDeviceProp devProp;
-    if ( cudaSuccess != cudaGetDeviceProperties(&devProp, device_id) ) {
+    struct gpuDeviceProp devProp;
+    if ( gpuSuccess != gpuGetDeviceProperties(&devProp, device_id) ) {
         fprintf(stderr,
             "[GPUJPEG] [Error] Can't get CUDA device properties!\n"
             "[GPUJPEG] [Error] Do you have proper driver for CUDA installed?\n"
@@ -248,39 +235,30 @@ gpujpeg_init_device(int device_id, int flags)
         return -1;
     }
 
-#if defined GPUJPEG_USE_OPENGL && CUDART_VERSION < 5000
-    if ( flags & GPUJPEG_OPENGL_INTEROPERABILITY ) {
-        cudaGLSetGLDevice(device_id); // not needed since CUDA 5.0
-        gpujpeg_cuda_check_error("Enabling OpenGL interoperability", return -1);
-    }
-#endif
-
     if ( flags & GPUJPEG_INIT_DEV_VERBOSE ) {
         int cuda_driver_version = 0;
-        cudaDriverGetVersion(&cuda_driver_version);
+        gpuDriverGetVersion(&cuda_driver_version);
         PRINTF("CUDA driver version:   %d.%d\n", cuda_driver_version / 1000, (cuda_driver_version % 100) / 10);
 
         int cuda_runtime_version = 0;
-        cudaRuntimeGetVersion(&cuda_runtime_version);
+        gpuRuntimeGetVersion(&cuda_runtime_version);
         PRINTF("CUDA runtime version:  %d.%d\n", cuda_runtime_version / 1000, (cuda_runtime_version % 100) / 10);
 
         PRINTF("Using Device #%d:       %s (c.c. %d.%d)\n", device_id, devProp.name, devProp.major, devProp.minor);
     }
 
-    cudaSetDevice(device_id);
+    gpuSetDevice(device_id);
     gpujpeg_cuda_check_error("Set CUDA device", return -1);
 
     // Test by simple copying that the device is ready
     uint8_t data[] = {8};
     uint8_t* d_data = NULL;
-    cudaMalloc((void**)&d_data, 1);
-    cudaMemcpy(d_data, data, 1, cudaMemcpyHostToDevice);
-    cudaFree(d_data);
-    cudaError_t error = cudaGetLastError();
-    if ( cudaSuccess != error ) {
-        fprintf(stderr, "[GPUJPEG] [Error] Failed to initialize CUDA device: %s\n", cudaGetErrorString(error));
-        if ( flags & GPUJPEG_OPENGL_INTEROPERABILITY )
-            fprintf(stderr, "[GPUJPEG] [Info]  OpenGL interoperability is used, is OpenGL context available?\n");
+    gpuMalloc((void**)&d_data, 1);
+    gpuMemcpy(d_data, data, 1, gpuMemcpyHostToDevice);
+    gpuFree(d_data);
+    gpuError_t error = gpuGetLastError();
+    if ( gpuSuccess != error ) {
+        fprintf(stderr, "[GPUJPEG] [Error] Failed to initialize CUDA device: %s\n", gpuGetErrorString(error));
         return -1;
     }
 
@@ -496,7 +474,7 @@ static enum { FF_CS_NONE, FF_CS_RGB, FF_CS_YCBCR } get_file_type_cs(enum gpujpeg
 
 void gpujpeg_set_device(int index)
 {
-    cudaSetDevice(index);
+    gpuSetDevice(index);
 }
 
 /* Documented at declaration */
@@ -505,8 +483,8 @@ gpujpeg_component_print8(struct gpujpeg_component* component, uint8_t* d_data)
 {
     int data_size = component->data_width * component->data_height;
     uint8_t* data = NULL;
-    cudaMallocHost((void**)&data, data_size * sizeof(uint8_t));
-    cudaMemcpy(data, d_data, data_size * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+    gpuMallocHost((void**)&data, data_size * sizeof(uint8_t));
+    gpuMemcpy(data, d_data, data_size * sizeof(uint8_t), gpuMemcpyDeviceToHost);
 
     PRINTF("Print Data\n");
     for ( int y = 0; y < component->data_height; y++ ) {
@@ -515,7 +493,7 @@ gpujpeg_component_print8(struct gpujpeg_component* component, uint8_t* d_data)
         }
         PRINTF("\n");
     }
-    cudaFreeHost(data);
+    gpuFreeHost(data);
 }
 
 /* Documented at declaration */
@@ -524,8 +502,8 @@ gpujpeg_component_print16(struct gpujpeg_component* component, int16_t* d_data)
 {
     int data_size = component->data_width * component->data_height;
     int16_t* data = NULL;
-    cudaMallocHost((void**)&data, data_size * sizeof(int16_t));
-    cudaMemcpy(data, d_data, data_size * sizeof(int16_t), cudaMemcpyDeviceToHost);
+    gpuMallocHost((void**)&data, data_size * sizeof(int16_t));
+    gpuMemcpy(data, d_data, data_size * sizeof(int16_t), gpuMemcpyDeviceToHost);
 
     PRINTF("Print Data\n");
     for ( int y = 0; y < component->data_height; y++ ) {
@@ -534,7 +512,7 @@ gpujpeg_component_print16(struct gpujpeg_component* component, int16_t* d_data)
         }
         PRINTF("\n");
     }
-    cudaFreeHost(data);
+    gpuFreeHost(data);
 }
 
 /* Documented at declaration */
@@ -542,10 +520,10 @@ int
 gpujpeg_coder_init(struct gpujpeg_coder * coder)
 {
     // Get info about the device
-    struct cudaDeviceProp device_properties;
+    struct gpuDeviceProp device_properties;
     int device_idx;
-    GPUJPEG_CHECK(cudaGetDevice(&device_idx), return -1);
-    cudaGetDeviceProperties(&device_properties, device_idx);
+    GPUJPEG_CHECK(gpuGetDevice(&device_idx), return -1);
+    gpuGetDeviceProperties(&device_properties, device_idx);
     gpujpeg_cuda_check_error("Device info getting", return -1);
     coder->cuda_cc_major = device_properties.major;
     coder->cuda_cc_minor = device_properties.minor;
@@ -612,7 +590,7 @@ reset_timers(struct gpujpeg_coder* coder)
 
 int
 gpujpeg_coder_allocate_cpu_huffman_buf(struct gpujpeg_coder * coder) {
-    cudaMallocHost((void**)&coder->data_quantized, coder->data_size * sizeof(int16_t));
+    gpuMallocHost((void**)&coder->data_quantized, coder->data_size * sizeof(int16_t));
     gpujpeg_cuda_check_error("Coder quantized data host allocation", return -1);
 
     int16_t* comp_data_quantized = coder->data_quantized;
@@ -626,7 +604,7 @@ gpujpeg_coder_allocate_cpu_huffman_buf(struct gpujpeg_coder * coder) {
 }
 
 size_t
-gpujpeg_coder_init_image(struct gpujpeg_coder * coder, const struct gpujpeg_parameters * param, const struct gpujpeg_image_parameters * param_image, cudaStream_t stream)
+gpujpeg_coder_init_image(struct gpujpeg_coder * coder, const struct gpujpeg_parameters * param, const struct gpujpeg_image_parameters * param_image, gpuStream_t stream)
 {
     reset_timers(coder);
     if (gpujpeg_parameters_equals(&coder->param, param) && gpujpeg_image_parameters_equals(&coder->param_image, param_image)) {
@@ -648,18 +626,18 @@ gpujpeg_coder_init_image(struct gpujpeg_coder * coder, const struct gpujpeg_para
 
         // (Re)allocate color components in host memory
         if (coder->component != NULL) {
-            cudaFreeHost(coder->component);
+            gpuFreeHost(coder->component);
             coder->component = NULL;
         }
-        cudaMallocHost((void**)&coder->component, param->comp_count * sizeof(struct gpujpeg_component));
+        gpuMallocHost((void**)&coder->component, param->comp_count * sizeof(struct gpujpeg_component));
         gpujpeg_cuda_check_error("Coder color component host allocation", return 0);
 
         // (Re)allocate color components in device memory
         if (coder->d_component != NULL) {
-            cudaFree(coder->d_component);
+            gpuFree(coder->d_component);
             coder->d_component = NULL;
         }
-        cudaMalloc((void**)&coder->d_component, param->comp_count * sizeof(struct gpujpeg_component));
+        gpuMalloc((void**)&coder->d_component, param->comp_count * sizeof(struct gpujpeg_component));
         gpujpeg_cuda_check_error("Coder color component device allocation", return 0);
 
         coder->component_allocated_size = param->comp_count;
@@ -791,18 +769,18 @@ gpujpeg_coder_init_image(struct gpujpeg_coder * coder, const struct gpujpeg_para
 
         // (Re)allocate segments  in host memory
         if (coder->segment != NULL) {
-            cudaFreeHost(coder->segment);
+            gpuFreeHost(coder->segment);
             coder->segment = NULL;
         }
-        cudaMallocHost((void**)&coder->segment, coder->segment_count * sizeof(struct gpujpeg_segment));
+        gpuMallocHost((void**)&coder->segment, coder->segment_count * sizeof(struct gpujpeg_segment));
         gpujpeg_cuda_check_error("Coder segment host allocation", return 0);
 
         // (Re)allocate segments in device memory
         if (coder->d_segment != NULL) {
-            cudaFree(coder->d_segment);
+            gpuFree(coder->d_segment);
             coder->d_segment = NULL;
         }
-        cudaMalloc((void**)&coder->d_segment, coder->segment_count * sizeof(struct gpujpeg_segment));
+        gpuMalloc((void**)&coder->d_segment, coder->segment_count * sizeof(struct gpujpeg_segment));
         gpujpeg_cuda_check_error("Coder segment device allocation", return 0);
 
         coder->segment_allocated_size = coder->segment_count;
@@ -912,25 +890,25 @@ gpujpeg_coder_init_image(struct gpujpeg_coder * coder, const struct gpujpeg_para
 
         // (Re)allocate preprocessor data in device memory
         if (coder->d_data != NULL) {
-            cudaFree(coder->d_data);
+            gpuFree(coder->d_data);
             coder->d_data = NULL;
         }
-        cudaMalloc((void**)&coder->d_data, (coder->data_size + idct_overhead) * sizeof(uint8_t));
+        gpuMalloc((void**)&coder->d_data, (coder->data_size + idct_overhead) * sizeof(uint8_t));
         gpujpeg_cuda_check_error("Coder data device allocation", return 0);
 
         // Deallocate DCT and quantizer data in host memory, alloc just if needed
         // (gpujpeg_coder_allocate_cpu_huff_data())
         if ( coder->data_quantized != NULL ) {
-            cudaFreeHost(coder->data_quantized);
+            gpuFreeHost(coder->data_quantized);
             coder->data_quantized = NULL;
         }
 
         // (Re)allocated DCT and quantizer data in device memory
         if (coder->d_data_quantized != NULL) {
-            cudaFree(coder->d_data_quantized);
+            gpuFree(coder->d_data_quantized);
             coder->d_data_quantized = NULL;
         }
-        cudaMalloc((void**)&coder->d_data_quantized, (coder->data_size + idct_overhead) * sizeof(int16_t));
+        gpuMalloc((void**)&coder->d_data_quantized, (coder->data_size + idct_overhead) * sizeof(int16_t));
         gpujpeg_cuda_check_error("Coder quantized data device allocation", return 0);
 
         coder->data_allocated_size = coder->data_size + idct_overhead;
@@ -939,7 +917,7 @@ gpujpeg_coder_init_image(struct gpujpeg_coder * coder, const struct gpujpeg_para
     allocated_gpu_memory_size += coder->data_allocated_size * sizeof(int16_t);
 
     if (coder->encoder) { // clear the buffer for preprocessor when the image size is not divisible by 8x8
-        cudaMemset(coder->d_data, 0, coder->data_size * sizeof(uint8_t));
+        gpuMemset(coder->d_data, 0, coder->data_size * sizeof(uint8_t));
         gpujpeg_cuda_check_error("d_data memset failed", return 0);
     }
 
@@ -966,30 +944,30 @@ gpujpeg_coder_init_image(struct gpujpeg_coder * coder, const struct gpujpeg_para
 
         // (Re)allocate huffman coder data in host memory
         if (coder->data_compressed != NULL) {
-            cudaHostUnregister(coder->data_compressed);
+            gpuHostUnregister(coder->data_compressed);
             free(coder->data_compressed);
             coder->data_compressed = NULL;
         }
         coder->data_compressed = malloc(max_compressed_data_size);
         coder->data_compressed_pinned_sz = max_compressed_data_size / (GPUJPEG_MAX_BLOCK_COMPRESSED_SIZE
           / GPUJPEG_BLOCK_SQUARED_SIZE) / 3; // WxHxCH/3 bytes
-        cudaHostRegister(coder->data_compressed, coder->data_compressed_pinned_sz, cudaHostRegisterDefault);
+        gpuHostRegister(coder->data_compressed, coder->data_compressed_pinned_sz, gpuHostRegisterDefault);
         gpujpeg_cuda_check_error("Coder data compressed host registration", return 0);
 
         // (Re)allocate huffman coder data in device memory
         if (coder->d_data_compressed != NULL) {
-            cudaFree(coder->d_data_compressed);
+            gpuFree(coder->d_data_compressed);
             coder->d_data_compressed = NULL;
         }
-        cudaMalloc((void**)&coder->d_data_compressed, max_compressed_data_size * sizeof(uint8_t));
+        gpuMalloc((void**)&coder->d_data_compressed, max_compressed_data_size * sizeof(uint8_t));
         gpujpeg_cuda_check_error("Coder data compressed device allocation", return 0);
 
         // (Re)allocate Huffman coder temporary buffer
         if (coder->d_temp_huffman != NULL) {
-            cudaFree(coder->d_temp_huffman);
+            gpuFree(coder->d_temp_huffman);
             coder->d_temp_huffman = NULL;
         }
-        cudaMalloc((void**)&coder->d_temp_huffman, max_compressed_data_size * sizeof(uint8_t));
+        gpuMalloc((void**)&coder->d_temp_huffman, max_compressed_data_size * sizeof(uint8_t));
         gpujpeg_cuda_check_error("Huffman temp buffer device allocation", return 0);
 
         coder->data_compressed_allocated_size = max_compressed_data_size;
@@ -1007,18 +985,18 @@ gpujpeg_coder_init_image(struct gpujpeg_coder * coder, const struct gpujpeg_para
 
         // (Re)allocate list of block indices in host memory
         if (coder->block_list != NULL) {
-            cudaFreeHost(coder->block_list);
+            gpuFreeHost(coder->block_list);
             coder->block_list = NULL;
         }
-        cudaMallocHost((void**)&coder->block_list, coder->block_count * sizeof(*coder->block_list));
+        gpuMallocHost((void**)&coder->block_list, coder->block_count * sizeof(*coder->block_list));
         gpujpeg_cuda_check_error("Coder block list host allocation", return 0);
 
         // (Re)allocate list of block indices in device memory
         if (coder->d_block_list != NULL) {
-            cudaFree(coder->d_block_list);
+            gpuFree(coder->d_block_list);
             coder->d_block_list = NULL;
         }
-        cudaMalloc((void**)&coder->d_block_list, coder->block_count * sizeof(*coder->d_block_list));
+        gpuMalloc((void**)&coder->d_block_list, coder->block_count * sizeof(*coder->d_block_list));
         gpujpeg_cuda_check_error("Coder block list device allocation", return 0);
 
         coder->block_allocated_size = coder->block_count;
@@ -1085,16 +1063,16 @@ gpujpeg_coder_init_image(struct gpujpeg_coder * coder, const struct gpujpeg_para
     assert(block_idx == coder->block_count);
 
     // Copy components to device memory
-    cudaMemcpyAsync(coder->d_component, coder->component, coder->param.comp_count * sizeof(struct gpujpeg_component),
-                    cudaMemcpyHostToDevice, stream);
+    gpuMemcpyAsync(coder->d_component, coder->component, coder->param.comp_count * sizeof(struct gpujpeg_component),
+                    gpuMemcpyHostToDevice, stream);
     gpujpeg_cuda_check_error("Coder component copy", return 0);
 
     // Copy block lists to device memory
-    cudaMemcpyAsync(coder->d_block_list, coder->block_list, coder->block_count * sizeof(*coder->d_block_list), cudaMemcpyHostToDevice, stream);
+    gpuMemcpyAsync(coder->d_block_list, coder->block_list, coder->block_count * sizeof(*coder->d_block_list), gpuMemcpyHostToDevice, stream);
     gpujpeg_cuda_check_error("Coder block list copy", return 0);
 
     // Copy segments to device memory
-    cudaMemcpyAsync(coder->d_segment, coder->segment, coder->segment_count * sizeof(struct gpujpeg_segment), cudaMemcpyHostToDevice, stream);
+    gpuMemcpyAsync(coder->d_segment, coder->segment, coder->segment_count * sizeof(struct gpujpeg_segment), gpuMemcpyHostToDevice, stream);
     gpujpeg_cuda_check_error("Coder segment copy", return 0);
 
     coder->allocated_gpu_memory_size = allocated_gpu_memory_size;
@@ -1129,35 +1107,35 @@ int
 gpujpeg_coder_deinit(struct gpujpeg_coder* coder)
 {
     if (coder->component != NULL)
-        cudaFreeHost(coder->component);
+        gpuFreeHost(coder->component);
     if (coder->d_component != NULL)
-        cudaFree(coder->d_component);
+        gpuFree(coder->d_component);
     if ( coder->data_raw != NULL )
-        cudaFreeHost(coder->data_raw);
+        gpuFreeHost(coder->data_raw);
     if ( coder->d_data_raw_allocated != NULL )
-        cudaFree(coder->d_data_raw_allocated);
+        gpuFree(coder->d_data_raw_allocated);
     if ( coder->d_data != NULL )
-        cudaFree(coder->d_data);
+        gpuFree(coder->d_data);
     if ( coder->data_quantized != NULL )
-        cudaFreeHost(coder->data_quantized);
+        gpuFreeHost(coder->data_quantized);
     if ( coder->d_data_quantized != NULL )
-        cudaFree(coder->d_data_quantized);
+        gpuFree(coder->d_data_quantized);
     if ( coder->data_compressed != NULL ) {
-        cudaHostUnregister(coder->data_compressed);
+        gpuHostUnregister(coder->data_compressed);
         free(coder->data_compressed);
     }
     if ( coder->d_data_compressed != NULL )
-        cudaFree(coder->d_data_compressed);
+        gpuFree(coder->d_data_compressed);
     if ( coder->segment != NULL )
-        cudaFreeHost(coder->segment);
+        gpuFreeHost(coder->segment);
     if ( coder->d_segment != NULL )
-        cudaFree(coder->d_segment);
+        gpuFree(coder->d_segment);
     if ( coder->d_temp_huffman != NULL )
-        cudaFree(coder->d_temp_huffman);
+        gpuFree(coder->d_temp_huffman);
     if ( coder->block_list != NULL )
-        cudaFreeHost(coder->block_list);
+        gpuFreeHost(coder->block_list);
     if ( coder->d_block_list != NULL )
-        cudaFree(coder->d_block_list);
+        gpuFree(coder->d_block_list);
 
     GPUJPEG_CUSTOM_TIMER_DESTROY(coder->duration_memory_to, return -1);
     GPUJPEG_CUSTOM_TIMER_DESTROY(coder->duration_memory_from, return -1);
@@ -1205,7 +1183,7 @@ void*
 gpujpeg_cuda_malloc_host(size_t size)
 {
     void *ptr;
-    GPUJPEG_CHECK_EX(cudaMallocHost(&ptr, size), "Could not alloc host pointer", return NULL);
+    GPUJPEG_CHECK_EX(gpuMallocHost(&ptr, size), "Could not alloc host pointer", return NULL);
     return ptr;
 }
 
@@ -1237,7 +1215,7 @@ gpujpeg_image_load_from_file(const char* filename, uint8_t** image, size_t* imag
     }
 
     uint8_t* data = NULL;
-    cudaMallocHost((void**)&data, *image_size * sizeof(uint8_t));
+    gpuMallocHost((void**)&data, *image_size * sizeof(uint8_t));
     gpujpeg_cuda_check_error("Initialize CUDA host buffer", return -1);
     if ( *image_size != fread(data, sizeof(uint8_t), *image_size, file) ) {
         fprintf(stderr, "[GPUJPEG] [Error] Failed to load image data [%zd bytes] from file %s!\n", *image_size, filename);
@@ -1370,7 +1348,7 @@ gpujpeg_image_get_properties(const char *filename, struct gpujpeg_image_paramete
 int
 gpujpeg_image_destroy(uint8_t* image)
 {
-    cudaFreeHost(image);
+    gpuFreeHost(image);
 
     return 0;
 }
@@ -1471,12 +1449,12 @@ gpujpeg_image_convert(const char* input, const char* output, struct gpujpeg_imag
 
     // Create buffers if not already created
     if (coder->data_raw == NULL) {
-        if (cudaSuccess != cudaMallocHost((void**)&coder->data_raw, coder->data_raw_size * sizeof(uint8_t))) {
+        if (gpuSuccess != gpuMallocHost((void**)&coder->data_raw, coder->data_raw_size * sizeof(uint8_t))) {
             return -1;
         }
     }
     if (coder->d_data_raw_allocated == NULL) {
-        if (cudaSuccess != cudaMalloc((void**)&coder->d_data_raw_allocated, coder->data_raw_size * sizeof(uint8_t))) {
+        if (gpuSuccess != gpuMalloc((void**)&coder->d_data_raw_allocated, coder->data_raw_size * sizeof(uint8_t))) {
             return -1;
         }
     }
@@ -1484,13 +1462,13 @@ gpujpeg_image_convert(const char* input, const char* output, struct gpujpeg_imag
     coder->d_data_raw = coder->d_data_raw_allocated;
 
     // Perform preprocessor
-    GPUJPEG_ASSERT(cudaMemcpy(coder->d_data_raw, image, coder->data_raw_size * sizeof(uint8_t), cudaMemcpyHostToDevice) == cudaSuccess);
+    GPUJPEG_ASSERT(gpuMemcpy(coder->d_data_raw, image, coder->data_raw_size * sizeof(uint8_t), gpuMemcpyHostToDevice) == gpuSuccess);
     GPUJPEG_ASSERT(gpujpeg_preprocessor_encode(encoder) == 0);
     // Save preprocessor result
     uint8_t* buffer = NULL;
-    GPUJPEG_ASSERT(cudaMallocHost((void**)&buffer, coder->data_size * sizeof(uint8_t)) == cudaSuccess);
+    GPUJPEG_ASSERT(gpuMallocHost((void**)&buffer, coder->data_size * sizeof(uint8_t)) == gpuSuccess);
     GPUJPEG_ASSERT(buffer != NULL);
-    GPUJPEG_ASSERT(cudaMemcpy(buffer, coder->d_data, coder->data_size * sizeof(uint8_t), cudaMemcpyDeviceToHost) == cudaSuccess);
+    GPUJPEG_ASSERT(gpuMemcpy(buffer, coder->d_data, coder->data_size * sizeof(uint8_t), gpuMemcpyDeviceToHost) == gpuSuccess);
     // Deinitialize decoder
     gpujpeg_coder_deinit(coder);
 
@@ -1499,10 +1477,10 @@ gpujpeg_image_convert(const char* input, const char* output, struct gpujpeg_imag
     GPUJPEG_ASSERT(gpujpeg_coder_init(coder) == 0);
     GPUJPEG_ASSERT(gpujpeg_preprocessor_decoder_init(coder) == 0);
     // Perform postprocessor
-    GPUJPEG_ASSERT(cudaMemcpy(coder->d_data, buffer, coder->data_size * sizeof(uint8_t), cudaMemcpyHostToDevice) == cudaSuccess);
+    GPUJPEG_ASSERT(gpuMemcpy(coder->d_data, buffer, coder->data_size * sizeof(uint8_t), gpuMemcpyHostToDevice) == gpuSuccess);
     GPUJPEG_ASSERT(gpujpeg_preprocessor_decode(coder, NULL) == 0);
     // Save preprocessor result
-    GPUJPEG_ASSERT(cudaMemcpy(coder->data_raw, coder->d_data_raw, coder->data_raw_size * sizeof(uint8_t), cudaMemcpyDeviceToHost) == cudaSuccess);
+    GPUJPEG_ASSERT(gpuMemcpy(coder->data_raw, coder->d_data_raw, coder->data_raw_size * sizeof(uint8_t), gpuMemcpyDeviceToHost) == gpuSuccess);
     if ( gpujpeg_image_save_to_file(output, coder->data_raw, coder->data_raw_size, &param_image_to ) != 0 ) {
         fprintf(stderr, "[GPUJPEG] [Error] Failed to save image [%s]!\n", output);
         return -1;
@@ -1511,375 +1489,6 @@ gpujpeg_image_convert(const char* input, const char* output, struct gpujpeg_imag
     gpujpeg_coder_deinit(coder);
 
     return 0;
-#endif
-}
-
-#if defined GPUJPEG_USE_GLFW
-static void glfw_error_callback(int error, const char* description)
-{
-    fprintf(stderr, "[GPUJPEG] [Error] GLFW: %s (%d)\n", description, error);
-}
-#endif
-
-struct gpujpeg_opengl_context {
-#ifdef GPUJPEG_USE_GLFW
-    GLFWwindow* glfw_window;
-#elif defined GPUJPEG_USE_GLX
-    Display* glx_display;
-    Window glx_window;
-#else
-    int unused; // avoid empty struct if no extension is present
-#endif
-};
-
-/* Documented at declaration */
-int
-gpujpeg_opengl_init(struct gpujpeg_opengl_context **ctx)
-{
-#ifdef GPUJPEG_USE_OPENGL
-    #if defined(GPUJPEG_USE_GLX)
-        // Open display
-        Display* glx_display = XOpenDisplay(0);
-        if ( glx_display == NULL ) {
-            fprintf(stderr, "[GPUJPEG] [Error] Failed to open X display!\n");
-            return -1;
-        }
-
-        // Choose visual
-        static int attributes[] = {
-            GLX_RGBA,
-            GLX_DOUBLEBUFFER,
-            GLX_RED_SIZE,   1,
-            GLX_GREEN_SIZE, 1,
-            GLX_BLUE_SIZE,  1,
-            None
-        };
-        XVisualInfo* visual = glXChooseVisual(glx_display, DefaultScreen(glx_display), attributes);
-        if ( visual == NULL ) {
-            fprintf(stderr, "[GPUJPEG] [Error] Failed to choose visual!\n");
-            return -1;
-        }
-
-        // Create OpenGL context
-        GLXContext glx_context = glXCreateContext(glx_display, visual, 0, GL_TRUE);
-        if ( glx_context == NULL ) {
-            fprintf(stderr, "[GPUJPEG] [Error] Failed to create OpenGL context!\n");
-            return -1;
-        }
-
-        // Create window
-        Colormap colormap = XCreateColormap(glx_display, RootWindow(glx_display, visual->screen), visual->visual, AllocNone);
-        XSetWindowAttributes swa = { 0 };
-        swa.colormap = colormap;
-        swa.border_pixel = 0;
-        Window glx_window = XCreateWindow(
-            glx_display,
-            RootWindow(glx_display, visual->screen),
-            0, 0, 640, 480,
-            0, visual->depth, InputOutput, visual->visual,
-            CWBorderPixel | CWColormap | CWEventMask,
-            &swa
-        );
-        // Do not map window to display to keep it hidden
-        //XMapWindow(glx_display, glx_window);
-
-        glXMakeCurrent(glx_display, glx_window, glx_context);
-    #elif defined(GPUJPEG_USE_GLFW)
-        glfwSetErrorCallback(glfw_error_callback);
-        if (!glfwInit()) {
-            fprintf(stderr, "[GPUJPEG] [Error] glfwInit failed!\n");
-            return -1;
-        }
-
-        glfwWindowHint(GLFW_VISIBLE, GL_FALSE);
-        GLFWwindow* window = glfwCreateWindow(640, 480, "", NULL, NULL);
-        if (window == NULL) {
-            fprintf(stderr, "[GPUJPEG] [Error] Cannot create GLFW window!\n");
-            return -1;
-        }
-        glfwMakeContextCurrent(window);
-    #endif
-        GLenum err = glewInit();
-        if (err != GLEW_OK) {
-            fprintf(stderr, "[GPUJPEG] [Error] glewInit: %s\n", glewGetErrorString(err));
-            return -1;
-        }
-        struct gpujpeg_opengl_context *s = calloc(1, sizeof *s);
-    #if defined(GPUJPEG_USE_GLFW)
-        s->glfw_window = window;
-    #elif defined(GPUJPEG_USE_GLX)
-        s->glx_display = glx_display;
-        s->glx_window = glx_window;
-    #else
-        fprintf(stderr, "[GPUJPEG] [Error] gpujpeg_opengl_init not implemented in current build!\n");
-        fprintf(stderr, "[GPUJPEG] [Note] You can still use custom OpenGL context!\n");
-        free(s);
-        return -1;
-    #endif
-
-        *ctx = s;
-        return 0;
-#else
-    (void) ctx;
-    GPUJPEG_MISSING_OPENGL(return -2);
-#endif
-}
-
-void
-gpujpeg_opengl_destroy(struct gpujpeg_opengl_context *s)
-{
-    if (s == NULL) {
-        return;
-    }
-#ifdef GPUJPEG_USE_GLFW
-    glfwDestroyWindow(s->glfw_window);
-    glfwTerminate();
-#elif defined GPUJPEG_USE_GLX
-    XDestroyWindow(s->glx_display, s->glx_window);
-    XCloseDisplay(s->glx_display);
-#endif // defined GPUJPEG_USE_GLX
-    free(s);
-}
-
-/* Documented at declaration */
-int
-gpujpeg_opengl_texture_create(int width, int height, uint8_t* data)
-{
-#ifdef GPUJPEG_USE_OPENGL
-    GLuint texture_id = 0;
-
-    glGenTextures(1, &texture_id);
-    if (texture_id == 0) {
-        return 0;
-    }
-    glBindTexture(GL_TEXTURE_2D, texture_id);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    return texture_id;
-#else
-    (void) width, (void) height, (void) data;
-    GPUJPEG_MISSING_OPENGL(return 0);
-#endif
-}
-
-/* Documented at declaration */
-int
-gpujpeg_opengl_texture_set_data(int texture_id, uint8_t* data)
-{
-#ifdef GPUJPEG_USE_OPENGL
-    glBindTexture(GL_TEXTURE_2D, texture_id);
-
-    int width = 0;
-    int height = 0;
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &height);
-    assert(width != 0 && height != 0);
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-
-    glBindTexture(GL_TEXTURE_2D, 0);
-    return 0;
-#else
-    (void) texture_id, (void) data;
-    GPUJPEG_MISSING_OPENGL(return -1);
-#endif
-}
-
-/* Documented at declaration */
-int
-gpujpeg_opengl_texture_get_data(int texture_id, uint8_t* data, size_t* data_size)
-{
-#ifdef GPUJPEG_USE_OPENGL
-    glBindTexture(GL_TEXTURE_2D, texture_id);
-
-    int width = 0;
-    int height = 0;
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &height);
-    assert(width != 0 && height != 0);
-
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-    if ( data_size != NULL )
-        *data_size = width * height * 3;
-
-    glBindTexture(GL_TEXTURE_2D, 0);
-    return 0;
-#else
-    (void) texture_id, (void) data, (void) data_size;
-    GPUJPEG_MISSING_OPENGL(return -1);
-#endif
-}
-
-/* Documented at declaration */
-void
-gpujpeg_opengl_texture_destroy(int texture_id)
-{
-#ifdef GPUJPEG_USE_OPENGL
-     glDeleteTextures(1, (GLuint*)&texture_id);
-#else
-    (void) texture_id;
-    GPUJPEG_MISSING_OPENGL();
-#endif
-}
-
-/* Documented at declaration */
-struct gpujpeg_opengl_texture*
-gpujpeg_opengl_texture_register(int texture_id, enum gpujpeg_opengl_texture_type texture_type)
-{
-    struct gpujpeg_opengl_texture* texture = NULL;
-    cudaMallocHost((void**)&texture, sizeof(struct gpujpeg_opengl_texture));
-    assert(texture != NULL);
-
-    texture->texture_id = texture_id;
-    texture->texture_type = texture_type;
-    texture->texture_width = 0;
-    texture->texture_height = 0;
-    texture->texture_pbo_id = 0;
-    texture->texture_pbo_type = 0;
-    texture->texture_pbo_resource = 0;
-    texture->texture_callback_param = NULL;
-    texture->texture_callback_attach_opengl = NULL;
-    texture->texture_callback_detach_opengl = NULL;
-
-#ifdef GPUJPEG_USE_OPENGL
-    glBindTexture(GL_TEXTURE_2D, texture->texture_id);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texture->texture_width);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texture->texture_height);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    assert(texture->texture_width != 0 && texture->texture_height != 0);
-
-    // Select PBO type
-    if ( texture->texture_type == GPUJPEG_OPENGL_TEXTURE_READ ) {
-        texture->texture_pbo_type = GL_PIXEL_PACK_BUFFER;
-    } else if ( texture->texture_type == GPUJPEG_OPENGL_TEXTURE_WRITE ) {
-        texture->texture_pbo_type = GL_PIXEL_UNPACK_BUFFER;
-    } else {
-        assert(0);
-    }
-
-    // Create PBO
-    if (glGenBuffers == NULL) {
-        fprintf(stderr, "GLEW wasn't initialized!\n");
-        return NULL;
-    }
-    glGenBuffers(1, (GLuint*)&texture->texture_pbo_id);
-    if (texture->texture_pbo_id == 0) {
-        fprintf(stderr, "glGenBuffers returned zero!\n");
-        return NULL;
-    }
-    glBindBuffer(texture->texture_pbo_type, texture->texture_pbo_id);
-    glBufferData(texture->texture_pbo_type, texture->texture_width * texture->texture_height * 3 * sizeof(uint8_t), NULL, GL_DYNAMIC_DRAW);
-    glBindBuffer(texture->texture_pbo_type, 0);
-
-    // Create CUDA PBO Resource
-    cudaGraphicsGLRegisterBuffer(&texture->texture_pbo_resource, texture->texture_pbo_id, cudaGraphicsMapFlagsNone);
-    gpujpeg_cuda_check_error("Register OpenGL buffer", return NULL);
-
-    return texture;
-#else
-    GPUJPEG_MISSING_OPENGL(return NULL);
-#endif
-}
-
-/* Documented at declaration */
-void
-gpujpeg_opengl_texture_unregister(struct gpujpeg_opengl_texture* texture)
-{
-#ifdef GPUJPEG_USE_OPENGL
-    assert(texture != NULL);
-
-    if ( texture->texture_pbo_id != 0 ) {
-     glDeleteBuffers(1, (GLuint*)&texture->texture_pbo_id);
-    }
-    if ( texture->texture_pbo_resource != NULL ) {
-        cudaGraphicsUnregisterResource(texture->texture_pbo_resource);
-    }
-    cudaFreeHost(texture);
-#else
-    (void) texture;
-    GPUJPEG_MISSING_OPENGL(return);
-#endif
-}
-
-/* Documented at declaration */
-uint8_t*
-gpujpeg_opengl_texture_map(struct gpujpeg_opengl_texture* texture, size_t* data_size)
-{
-    assert(texture->texture_pbo_resource != NULL);
-    assert((texture->texture_callback_attach_opengl == NULL && texture->texture_callback_detach_opengl == NULL) ||
-           (texture->texture_callback_attach_opengl != NULL && texture->texture_callback_detach_opengl != NULL));
-
-    // Attach OpenGL context by callback
-    if ( texture->texture_callback_attach_opengl != NULL )
-        texture->texture_callback_attach_opengl(texture->texture_callback_param);
-
-#ifdef GPUJPEG_USE_OPENGL
-    uint8_t* d_data = NULL;
-
-    if ( texture->texture_type == GPUJPEG_OPENGL_TEXTURE_READ ) {
-        assert(texture->texture_pbo_type == GL_PIXEL_PACK_BUFFER);
-
-        glBindTexture(GL_TEXTURE_2D, texture->texture_id);
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, texture->texture_pbo_id);
-
-        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
-
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-        glBindTexture(GL_TEXTURE_2D, 0);
-    }
-
-    // Map pixel buffer object to cuda
-    cudaGraphicsMapResources(1, &texture->texture_pbo_resource, 0);
-    gpujpeg_cuda_check_error("Encoder map texture PBO resource", return NULL);
-
-    // Get device data pointer to pixel buffer object data
-    size_t d_data_size;
-    cudaGraphicsResourceGetMappedPointer((void **)&d_data, &d_data_size, texture->texture_pbo_resource);
-    gpujpeg_cuda_check_error("Encoder get device pointer for texture PBO resource", return NULL);
-    if ( data_size != NULL )
-        *data_size = d_data_size;
-
-    return d_data;
-#else
-    (void) data_size;
-    GPUJPEG_MISSING_OPENGL(return NULL);
-#endif
-}
-
-/* Documented at declaration */
-void
-gpujpeg_opengl_texture_unmap(struct gpujpeg_opengl_texture* texture)
-{
-    // Unmap pbo
-    cudaGraphicsUnmapResources(1, &texture->texture_pbo_resource, 0);
-    gpujpeg_cuda_check_error("Encoder unmap texture PBO resource", {});
-
-#ifdef GPUJPEG_USE_OPENGL
-    if ( texture->texture_type == GPUJPEG_OPENGL_TEXTURE_WRITE ) {
-        assert(texture->texture_pbo_type == GL_PIXEL_UNPACK_BUFFER);
-
-        glBindTexture(GL_TEXTURE_2D, texture->texture_id);
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, texture->texture_pbo_id);
-
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, texture->texture_width, texture->texture_height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-
-        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-        glBindTexture(GL_TEXTURE_2D, 0);
-        glFinish();
-    }
-
-    // Dettach OpenGL context by callback
-    if ( texture->texture_callback_detach_opengl != NULL )
-        texture->texture_callback_detach_opengl(texture->texture_callback_param);
-#else
-    GPUJPEG_MISSING_OPENGL(return);
 #endif
 }
 
@@ -2144,19 +1753,32 @@ int gpujpeg_pixel_format_is_planar(enum gpujpeg_pixel_format pixel_format)
  * @retval >=0 on success
  * @retval  <0 on failure
  */
-float gpujpeg_custom_timer_get_duration(cudaEvent_t start, cudaEvent_t stop) {
+float gpujpeg_custom_timer_get_duration(gpuEvent_t start, gpuEvent_t stop) {
     float elapsedTime = NAN;
-    cudaEventSynchronize(stop);
+    gpuEventSynchronize(stop);
     gpujpeg_cuda_check_error("cudaEventSynchronize", return -1);
-    cudaEventElapsedTime(&elapsedTime, start, stop);
+    gpuEventElapsedTime(&elapsedTime, start, stop);
     gpujpeg_cuda_check_error("cudaEventElapsedTime", return -1);
     return elapsedTime;
+}
+
+/**
+ * Get error string wrapper for GPU compatibility
+ */
+const char* gpujpeg_get_error_string(gpuError_t error) {
+#if defined(GPUJPEG_USE_HIP)
+    return hipGetErrorString(error);
+#elif defined(GPUJPEG_USE_SYCL)
+    return "SYCL error";
+#else
+    return gpuGetErrorString(error);
+#endif
 }
 
 void
 gpujpeg_device_reset(void)
 {
-    cudaDeviceReset();
+    gpuDeviceReset();
 }
 
 /**
@@ -2274,28 +1896,28 @@ format_number_with_delim(size_t num, char* buf, size_t buflen)
 }
 
 /**
- * @brief tweaked cudaMemcpyAsync alternative  allowing partially-pinned buffers
+ * @brief tweaked gpuMemcpyAsync alternative  allowing partially-pinned buffers
  *
  * Some buffers are only partially pinned (currently gpujpeg_coder::data_compressed) for 2 reason:
  * - to speed up the initialization - allcating huge pinned buffers (cudaHostMalloc) takes noticable amount of time
  * - if not used, which is the vast majority of size, it still ocuppies the allocated amount of _physical_ memory
  *
- * This solution has an unfortunate drawback that cudaMemcpyAsync cannot be performend across the pinned and non-pinned
+ * This solution has an unfortunate drawback that gpuMemcpyAsync cannot be performend across the pinned and non-pinned
  * boundary. So in the (perhaps rare) case when the size is higher than pinned_sz, 2x memcpy must be used.
  *
- * @sa gpujpeg_coder_init_image (cudaHostRegister)
- * @sa gpujpeg_coder_deinit (cudaHostUnregister)
+ * @sa gpujpeg_coder_init_image (gpuHostRegister)
+ * @sa gpujpeg_coder_deinit (gpuHostUnregister)
  */
-cudaError_t
-gpujpeg_cuda_memcpy_async_partially_pinned(void* dst, const void* src, size_t count, enum cudaMemcpyKind kind,
-                                            cudaStream_t stream, size_t pinned_sz)
+gpuError_t
+gpujpeg_cuda_memcpy_async_partially_pinned(void* dst, const void* src, size_t count, enum gpuMemcpyKind kind,
+                                            gpuStream_t stream, size_t pinned_sz)
 {
-    cudaError_t err = cudaMemcpyAsync(dst, src, MIN(count, pinned_sz), kind, stream);
-    if ( err != cudaSuccess ) {
+    gpuError_t err = gpuMemcpyAsync(dst, src, MIN(count, pinned_sz), kind, stream);
+    if ( err != gpuSuccess ) {
         return err;
     }
     if ( count > pinned_sz ) {
-        err = cudaMemcpyAsync((uint8_t*)dst + pinned_sz, (uint8_t*)src + pinned_sz, count - pinned_sz, kind, stream);
+        err = gpuMemcpyAsync((uint8_t*)dst + pinned_sz, (uint8_t*)src + pinned_sz, count - pinned_sz, kind, stream);
     }
     return err;
 }

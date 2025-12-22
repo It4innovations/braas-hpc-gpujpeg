@@ -120,7 +120,7 @@ gpujpeg_table_quantization_encoder_init(struct gpujpeg_table_quantization* table
     }
     
     // Copy quantization table to constant memory
-    if ( cudaSuccess != cudaMemcpy(table->d_table_forward, h_quantization_table, 64 * sizeof(float), cudaMemcpyHostToDevice) )
+    if ( gpuSuccess != gpuMemcpy(table->d_table_forward, h_quantization_table, 64 * sizeof(float), gpuMemcpyHostToDevice) )
         return  -1;
     gpujpeg_cuda_check_error("Copy DCT quantization table to device memory", return -1);
 
@@ -144,7 +144,7 @@ gpujpeg_table_quantization_decoder_init(struct gpujpeg_table_quantization* table
     }
 
     // Copy tables to device memory
-    if ( cudaSuccess != cudaMemcpy(table->d_table, table->table, 64 * sizeof(uint16_t), cudaMemcpyHostToDevice) )
+    if ( gpuSuccess != gpuMemcpy(table->d_table, table->table, 64 * sizeof(uint16_t), gpuMemcpyHostToDevice) )
         return -1;
         
     return 0;
@@ -159,7 +159,7 @@ gpujpeg_table_quantization_decoder_compute(struct gpujpeg_table_quantization* ta
     }
 
     // Copy tables to device memory
-    if ( cudaSuccess != cudaMemcpy(table->d_table, table->table, 64 * sizeof(uint16_t), cudaMemcpyHostToDevice) )
+    if ( gpuSuccess != gpuMemcpy(table->d_table, table->table, 64 * sizeof(uint16_t), gpuMemcpyHostToDevice) )
         return -1;
         
     return 0;

@@ -622,26 +622,26 @@ gpujpeg_huffman_gpu_decoder_init()
         gpujpeg_order_natural,
         GPUJPEG_ORDER_NATURAL_SIZE * sizeof(int),
         0,
-        cudaMemcpyHostToDevice
+        gpuMemcpyHostToDevice
     );
     gpujpeg_cuda_check_error("Huffman decoder init", gpujpeg_huffman_gpu_decoder_destroy(huffman_gpu_decoder); return NULL);
 #else
-    cudaMalloc((void**)&huffman_gpu_decoder->d_order_natural, GPUJPEG_ORDER_NATURAL_SIZE * sizeof(int));
-    gpujpeg_cuda_check_error("Huffman GPU decoder natural order table allocation", gpujpeg_huffman_gpu_decoder_destroy(huffman_gpu_decoder); return NULL);
-    cudaMemcpy(
+    if (gpuMalloc((void**)&huffman_gpu_decoder->d_order_natural, GPUJPEG_ORDER_NATURAL_SIZE * sizeof(int)) != gpuSuccess)
+        gpujpeg_cuda_check_error("Huffman GPU decoder natural order table allocation", gpujpeg_huffman_gpu_decoder_destroy(huffman_gpu_decoder); return NULL);
+    if (gpuMemcpy(
         huffman_gpu_decoder->d_order_natural,
         gpujpeg_order_natural,
         GPUJPEG_ORDER_NATURAL_SIZE * sizeof(int),
-        cudaMemcpyHostToDevice
-    );
-    gpujpeg_cuda_check_error("Huffman GPU decoder natural order table copy", gpujpeg_huffman_gpu_decoder_destroy(huffman_gpu_decoder); return NULL);
+        gpuMemcpyHostToDevice
+    ) != gpuSuccess)
+        gpujpeg_cuda_check_error("Huffman GPU decoder natural order table copy", gpujpeg_huffman_gpu_decoder_destroy(huffman_gpu_decoder); return NULL);
 #endif
 
-    cudaMalloc((void**)&huffman_gpu_decoder->d_tables_full, 4 * (1 << 16) * sizeof(uint16_t));
-    gpujpeg_cuda_check_error("Huffman GPU decoder full table allocation", gpujpeg_huffman_gpu_decoder_destroy(huffman_gpu_decoder); return NULL);
+    if (gpuMalloc((void**)&huffman_gpu_decoder->d_tables_full, 4 * (1 << 16) * sizeof(uint16_t)) != gpuSuccess)
+        gpujpeg_cuda_check_error("Huffman GPU decoder full table allocation", gpujpeg_huffman_gpu_decoder_destroy(huffman_gpu_decoder); return NULL);
 
-    cudaMalloc((void**)&huffman_gpu_decoder->d_tables_quick, QUICK_TABLE_ITEMS * sizeof(uint16_t));
-    gpujpeg_cuda_check_error("Huffman GPU decoder quick table allocation", gpujpeg_huffman_gpu_decoder_destroy(huffman_gpu_decoder); return NULL);
+    if (gpuMalloc((void**)&huffman_gpu_decoder->d_tables_quick, QUICK_TABLE_ITEMS * sizeof(uint16_t)) != gpuSuccess)
+        gpujpeg_cuda_check_error("Huffman GPU decoder quick table allocation", gpujpeg_huffman_gpu_decoder_destroy(huffman_gpu_decoder); return NULL);
     
     return huffman_gpu_decoder;
 }
@@ -653,9 +653,12 @@ gpujpeg_huffman_gpu_decoder_destroy(struct gpujpeg_huffman_gpu_decoder *huffman_
         return;
     }
 
-    cudaFree(huffman_gpu_decoder->d_order_natural);
-    cudaFree(huffman_gpu_decoder->d_tables_full);
-    cudaFree(huffman_gpu_decoder->d_tables_quick);
+    if (huffman_gpu_decoder->d_order_natural)
+        (void)gpuFree(huffman_gpu_decoder->d_order_natural);
+    if (huffman_gpu_decoder->d_tables_full)
+        (void)gpuFree(huffman_gpu_decoder->d_tables_full);
+    if (huffman_gpu_decoder->d_tables_quick)
+        (void)gpuFree(huffman_gpu_decoder->d_tables_quick);
     free(huffman_gpu_decoder);
 }
 
@@ -678,9 +681,9 @@ gpujpeg_huffman_gpu_decoder_decode(struct gpujpeg_decoder* decoder)
     enum { THREADS_PER_TBLOCK = 192 };
     
     // Configure more Shared memory for both kernels
-    cudaFuncSetCacheConfig(gpujpeg_huffman_decoder_table_kernel, cudaFuncCachePreferShared);
-    cudaFuncSetCacheConfig(gpujpeg_huffman_decoder_decode_kernel<true, THREADS_PER_TBLOCK>, cudaFuncCachePreferShared);
-    cudaFuncSetCacheConfig(gpujpeg_huffman_decoder_decode_kernel<false, THREADS_PER_TBLOCK>, cudaFuncCachePreferShared);
+    (void)gpuFuncSetCacheConfig((const void*)gpujpeg_huffman_decoder_table_kernel, gpuFuncCachePreferShared);
+    (void)gpuFuncSetCacheConfig((const void*)gpujpeg_huffman_decoder_decode_kernel<true, THREADS_PER_TBLOCK>, gpuFuncCachePreferShared);
+    (void)gpuFuncSetCacheConfig((const void*)gpujpeg_huffman_decoder_decode_kernel<false, THREADS_PER_TBLOCK>, gpuFuncCachePreferShared);
     
     // Setup GPU tables (one thread for each of 65536 entries)
     gpujpeg_huffman_decoder_table_kernel<<<256, 256, 0, coder->stream>>>(
@@ -710,9 +713,9 @@ gpujpeg_huffman_gpu_decoder_decode(struct gpujpeg_decoder* decoder)
         coder->component[comp].ac_huff_idx = decoder->comp_table_huffman_map[comp][GPUJPEG_HUFFMAN_AC];
     }
     // Copy updated components to device memory
-    cudaMemcpyAsync(coder->d_component, coder->component, coder->param.comp_count * sizeof(struct gpujpeg_component),
-                    cudaMemcpyHostToDevice, coder->stream);
-    gpujpeg_cuda_check_error("Coder component copy", return 0);
+    if (gpuMemcpyAsync(coder->d_component, coder->component, coder->param.comp_count * sizeof(struct gpujpeg_component),
+                    gpuMemcpyHostToDevice, coder->stream) != gpuSuccess)
+        gpujpeg_cuda_check_error("Coder component copy", return 0);
     
     // Run decoding kernel
     dim3 thread(THREADS_PER_TBLOCK);

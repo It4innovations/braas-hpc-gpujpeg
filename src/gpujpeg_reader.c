@@ -979,7 +979,7 @@ gpujpeg_reader_read_dht(struct gpujpeg_decoder* decoder, uint8_t** image, const 
         }
 
         // Copy table to device memory
-        cudaMemcpyAsync(d_table, table, sizeof(struct gpujpeg_table_huffman_decoder), cudaMemcpyHostToDevice,
+        gpuMemcpyAsync(d_table, table, sizeof(struct gpujpeg_table_huffman_decoder), gpuMemcpyHostToDevice,
                         decoder->coder.stream);
         gpujpeg_cuda_check_error("Decoder copy huffman table ", return -1);
     }

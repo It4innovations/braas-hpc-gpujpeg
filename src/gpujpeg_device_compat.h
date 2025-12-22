@@ -12,11 +12,21 @@
 #define GPUJPEG_DEVICE_COMPAT_H
 
 // Determine which GPU backend to use
-#if defined(__HIPCC__) || defined(__HIP_PLATFORM_AMD__) || defined(__HIP_PLATFORM_NVIDIA__)
+// Check CMake-defined macros first, then fall back to compiler detection
+#if defined(GPUJPEG_USE_HIP)
+    // HIP backend explicitly requested via CMake
+#elif defined(GPUJPEG_USE_SYCL)
+    // SYCL backend explicitly requested via CMake
+#elif defined(GPUJPEG_USE_CUDA)
+    // CUDA backend explicitly requested via CMake
+#elif defined(__HIPCC__) || defined(__HIP_PLATFORM_AMD__) || defined(__HIP_PLATFORM_NVIDIA__)
+    // Auto-detect HIP from compiler
     #define GPUJPEG_USE_HIP
 #elif defined(__SYCL_DEVICE_ONLY__) || defined(SYCL_LANGUAGE_VERSION)
+    // Auto-detect SYCL from compiler
     #define GPUJPEG_USE_SYCL
 #else
+    // Default to CUDA
     #define GPUJPEG_USE_CUDA
 #endif
 
@@ -31,7 +41,6 @@
 #define gpuStream_t                         cudaStream_t
 #define gpuError_t                          cudaError_t
 #define gpuEvent_t                          cudaEvent_t
-#define gpuGraphicsResource                 cudaGraphicsResource
 
 // Error codes
 #define gpuSuccess                          cudaSuccess
@@ -44,11 +53,18 @@
 #define gpuMemcpy                           cudaMemcpy
 #define gpuMemcpyAsync                      cudaMemcpyAsync
 #define gpuMemcpy2DAsync                    cudaMemcpy2DAsync
+#define gpuMemset                           cudaMemset
+#define gpuMemsetAsync                      cudaMemsetAsync
+#define gpuHostRegister                     cudaHostRegister
+#define gpuHostUnregister                   cudaHostUnregister
 #define gpuMemcpyHostToDevice               cudaMemcpyHostToDevice
 #define gpuMemcpyDeviceToHost               cudaMemcpyDeviceToHost
 #define gpuMemcpyDeviceToDevice             cudaMemcpyDeviceToDevice
 #define gpuMemcpyToSymbol                   cudaMemcpyToSymbol
 #define gpuMemcpyToSymbolAsync              cudaMemcpyToSymbolAsync
+
+// Host register flags
+#define gpuHostRegisterDefault              cudaHostRegisterDefault
 
 // Stream management
 #define gpuStreamDefault                    cudaStreamDefault
@@ -63,8 +79,20 @@
 
 // Device management
 #define gpuSetDevice                        cudaSetDevice
+#define gpuGetDevice                        cudaGetDevice
+#define gpuGetDeviceCount                   cudaGetDeviceCount
+#define gpuGetDeviceProperties              cudaGetDeviceProperties
 #define gpuGetLastError                     cudaGetLastError
 #define gpuGetErrorString                   cudaGetErrorString
+#define gpuDeviceReset                      cudaDeviceReset
+#define gpuDriverGetVersion                 cudaDriverGetVersion
+#define gpuRuntimeGetVersion                cudaRuntimeGetVersion
+
+// Device properties
+#define gpuDeviceProp                       cudaDeviceProp
+
+// Memory copy kinds
+#define gpuMemcpyKind                       cudaMemcpyKind
 
 // Function attributes
 #define gpuFuncSetCacheConfig               cudaFuncSetCacheConfig
@@ -84,30 +112,56 @@
 // ==============================================================================
 #elif defined(GPUJPEG_USE_HIP)
 
-#include <hip/hip_runtime.h>
+// Define HIP platform for AMD GPUs
+#ifndef __HIP_PLATFORM_AMD__
+#define __HIP_PLATFORM_AMD__
+#endif
 
-// Type definitions
-#define gpuStream_t                         hipStream_t
-#define gpuError_t                          hipError_t
-#define gpuEvent_t                          hipEvent_t
-#define gpuGraphicsResource                 hipGraphicsResource
+// Use C-compatible HIP API header for C files
+#ifdef __cplusplus
+    #include <hip/hip_runtime.h>
+    // Type definitions
+    #define gpuStream_t                         hipStream_t
+    #define gpuError_t                          hipError_t
+    #define gpuEvent_t                          hipEvent_t
+    // Memory copy kinds
+    #define gpuMemcpyKind                       hipMemcpyKind
+#else
+    #include <hip/hip_runtime_api.h>
+    // For C files, use HIP's actual types (don't redefine)
+    #define gpuStream_t                         hipStream_t
+    #define gpuError_t                          hipError_t
+    #define gpuEvent_t                          hipEvent_t
+    
+    // Memory copy kinds - use HIP's enum directly
+    #define gpuMemcpyKind                       hipMemcpyKind
+#endif
 
 // Error codes
 #define gpuSuccess                          hipSuccess
 
 // Memory management
 #define gpuMalloc                           hipMalloc
-#define gpuMallocHost                       hipMallocHost
+#define gpuMallocHost(ptr, size)            hipHostMalloc(ptr, size, hipHostMallocDefault)
 #define gpuFree                             hipFree
-#define gpuFreeHost                         hipFreeHost
+#define gpuFreeHost                         hipHostFree
 #define gpuMemcpy                           hipMemcpy
 #define gpuMemcpyAsync                      hipMemcpyAsync
 #define gpuMemcpy2DAsync                    hipMemcpy2DAsync
+#define gpuMemset                           hipMemset
+#define gpuMemsetAsync                      hipMemsetAsync
+#define gpuHostRegister                     hipHostRegister
+#define gpuHostUnregister                   hipHostUnregister
+
+// Memory copy direction constants
 #define gpuMemcpyHostToDevice               hipMemcpyHostToDevice
 #define gpuMemcpyDeviceToHost               hipMemcpyDeviceToHost
 #define gpuMemcpyDeviceToDevice             hipMemcpyDeviceToDevice
 #define gpuMemcpyToSymbol                   hipMemcpyToSymbol
 #define gpuMemcpyToSymbolAsync              hipMemcpyToSymbolAsync
+
+// Host register flags
+#define gpuHostRegisterDefault              hipHostRegisterDefault
 
 // Stream management
 #define gpuStreamDefault                    hipStreamDefault
@@ -122,8 +176,17 @@
 
 // Device management
 #define gpuSetDevice                        hipSetDevice
+#define gpuGetDevice                        hipGetDevice
+#define gpuGetDeviceCount                   hipGetDeviceCount
+#define gpuGetDeviceProperties              hipGetDeviceProperties
 #define gpuGetLastError                     hipGetLastError
 #define gpuGetErrorString                   hipGetErrorString
+#define gpuDeviceReset                      hipDeviceReset
+#define gpuDriverGetVersion                 hipDriverGetVersion
+#define gpuRuntimeGetVersion                hipRuntimeGetVersion
+
+// Device properties
+#define gpuDeviceProp                       hipDeviceProp_t
 
 // Function attributes
 #define gpuFuncSetCacheConfig               hipFuncSetCacheConfig
@@ -157,7 +220,6 @@ namespace gpujpeg_sycl {
 typedef sycl::queue* gpuStream_t;
 typedef int gpuError_t;
 typedef void* gpuEvent_t;
-typedef void* gpuGraphicsResource;
 
 // Error codes
 #define gpuSuccess                          0

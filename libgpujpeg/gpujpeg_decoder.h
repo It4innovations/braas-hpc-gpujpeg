@@ -77,9 +77,6 @@ struct gpujpeg_decoder_output
     /// Decoded image parameters
     struct gpujpeg_image_parameters param_image;
 
-    /// OpenGL texture
-    struct gpujpeg_opengl_texture* texture;
-
     const struct gpujpeg_image_metadata *metadata;
 };
 
@@ -89,7 +86,7 @@ struct gpujpeg_decoder_output
  */
 struct gpujpeg_decoder_init_parameters
 {
-    cudaStream_t stream; ///< stream CUDA stream to be used, cudaStreamDefault (0x00) is default
+    gpuStream_t stream; ///< stream GPU stream to be used, gpuStreamDefault (0x00) is default
     int verbose; ///< verbosity level (-1 - quiet, 0 - normal, 1 - verbose)
     bool perf_stats; ///< print performance statistics on output
     bool ff_cs_itu601_is_709; ///< if FFmpeg specific COM marker "CS=ITU601" present, interpret the data as
@@ -116,15 +113,6 @@ GPUJPEG_API void
 gpujpeg_decoder_output_set_custom(struct gpujpeg_decoder_output* output, uint8_t* custom_buffer);
 
 /**
- * Set decoder output to OpenGL texture
- *
- * @param output  Decoder output structure
- * @return void
- */
-GPUJPEG_API void
-gpujpeg_decoder_output_set_texture(struct gpujpeg_decoder_output* output, struct gpujpeg_opengl_texture* texture);
-
-/**
  * Sets output to CUDA buffer
  *
  * @param output  Decoder output structure
@@ -146,11 +134,11 @@ gpujpeg_decoder_output_set_custom_cuda(struct gpujpeg_decoder_output* output, ui
  * Create JPEG decoder
  *
  * @sa gpujpeg_decoder_create_with_params
- * @param stream CUDA stream to be used, may be cudaStreamDefault (0x00)
+ * @param stream GPU stream to be used, may be gpuStreamDefault (0x00)
  * @return decoder structure if succeeds, otherwise NULL
  */
 GPUJPEG_API struct gpujpeg_decoder*
-gpujpeg_decoder_create(cudaStream_t stream);
+gpujpeg_decoder_create(gpuStream_t stream);
 
 GPUJPEG_API struct gpujpeg_decoder_init_parameters
 gpujpeg_decoder_default_init_parameters(void);

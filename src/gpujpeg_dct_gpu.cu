@@ -86,7 +86,7 @@
  */
 union PackedInteger
 {
-    struct __align__(8)
+    struct alignas(8)
     {
         int16_t hShort1;
         int16_t hShort2;
@@ -635,14 +635,15 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder)
 
         // copy the quantization table into constant memory for devices of CC < 2.0
         if( encoder->coder.cuda_cc_major < 2 ) {
-            cudaMemcpyToSymbolAsync(
+            if (gpuMemcpyToSymbolAsync(
                 gpujpeg_dct_gpu_quantization_table_const,
                 d_quantization_table,
                 sizeof(gpujpeg_dct_gpu_quantization_table_const),
                 0,
-                cudaMemcpyDeviceToDevice,
+                gpuMemcpyDeviceToDevice,
                 coder->stream
-            );
+            ) != gpuSuccess)
+                return -1;
             gpujpeg_cuda_check_error("Quantization table memcpy failed", return -1);
         }
 
@@ -700,14 +701,15 @@ gpujpeg_idct_gpu(struct gpujpeg_decoder* decoder)
         uint16_t* d_quantization_table = decoder->table_quantization[decoder->comp_table_quantization_map[comp]].d_table;
 
         // Copy quantization table to constant memory
-        cudaMemcpyToSymbolAsync(
+        if (gpuMemcpyToSymbolAsync(
             gpujpeg_idct_gpu_quantization_table,
             d_quantization_table,
             64 * sizeof(uint16_t),
             0,
-            cudaMemcpyDeviceToDevice,
+            gpuMemcpyDeviceToDevice,
             coder->stream
-        );
+        ) != gpuSuccess)
+            return -1;
         gpujpeg_cuda_check_error("Copy IDCT quantization table to constant memory", return -1);
 
         dim3 dct_grid(gpujpeg_div_and_round_up(block_count_x * block_count_y,

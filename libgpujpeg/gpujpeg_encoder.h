@@ -61,9 +61,6 @@ struct gpujpeg_encoder_input
 
     /// Image data
     uint8_t* image;
-
-    /// Registered OpenGL Texture
-    struct gpujpeg_opengl_texture* texture;
 };
 
 /**
@@ -88,35 +85,21 @@ gpujpeg_encoder_input_set_image(struct gpujpeg_encoder_input* input, uint8_t* im
 GPUJPEG_API void
 gpujpeg_encoder_input_set_gpu_image(struct gpujpeg_encoder_input* input, uint8_t* image);
 
-/**
- * Set encoder input to OpenGL texture
- *
- * @param encoder_input  Encoder input structure
- * @param texture_id  OpenGL texture id
- * @return void
- * @sa gpujpeg_encoder_input_set_texture
- */
-GPUJPEG_API void
-gpujpeg_encoder_input_set_texture(struct gpujpeg_encoder_input* input, struct gpujpeg_opengl_texture* texture);
-
 /// alternative to @ref gpujpeg_encoder_input_set_image returning the struct as a return value
 GPUJPEG_API struct gpujpeg_encoder_input
 gpujpeg_encoder_input_image(uint8_t* image);
 /// alternative to @ref gpujpeg_encoder_input_set_gpu_image returning the struct as a return value
 GPUJPEG_API struct gpujpeg_encoder_input
 gpujpeg_encoder_input_gpu_image(uint8_t* image);
-/// alternative to @ref gpujpeg_encoder_input_set_texture returning the struct as a return value
-GPUJPEG_API struct gpujpeg_encoder_input
-gpujpeg_encoder_input_texture(struct gpujpeg_opengl_texture* texture);
 
 /**
  * Create JPEG encoder
  *
- * @param stream CUDA stream to be used, may be cudaStreamDefault (0x00)
+ * @param stream GPU stream to be used, may be gpuStreamDefault (0x00) or NULL
  * @return encoder structure if succeeds, otherwise NULL
  */
 GPUJPEG_API struct gpujpeg_encoder*
-gpujpeg_encoder_create(cudaStream_t stream);
+gpujpeg_encoder_create(gpuStream_t stream);
 
 /**
  * Compute maximum number of image pixels (width x height) which can be encoded by given memory size.

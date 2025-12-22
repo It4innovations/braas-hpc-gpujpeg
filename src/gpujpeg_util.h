@@ -50,7 +50,7 @@ extern "C" {
         gpuError_t err = gpuGetLastError(); \
         if( gpuSuccess != err) { \
             fprintf(stderr, "[GPUJPEG] [Error] %s (line %i): %s: %s.\n", \
-                __FILE__, __LINE__, msg, gpuGetErrorString( err) ); \
+                __FILE__, __LINE__, msg, gpujpeg_get_error_string( err) ); \
             action; \
         } \
     } \

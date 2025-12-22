@@ -218,7 +218,7 @@ gpujpeg_idct_cpu(struct gpujpeg_decoder* decoder)
         struct gpujpeg_component* component = &coder->component[comp];
 
         // Copy data to host
-        cudaMemcpy(component->data_quantized, component->d_data_quantized, component->data_size * sizeof(uint16_t), cudaMemcpyDeviceToHost);
+        gpuMemcpy(component->data_quantized, component->d_data_quantized, component->data_size * sizeof(uint16_t), gpuMemcpyDeviceToHost);
 
         // Perform IDCT on CPU
         int width = component->data_width / GPUJPEG_BLOCK_SIZE;
@@ -235,7 +235,7 @@ gpujpeg_idct_cpu(struct gpujpeg_decoder* decoder)
 
         // Copy results to device
         uint8_t* data = NULL;
-        GPUJPEG_ASSERT(cudaMallocHost((void**)&data, component->data_size * sizeof(uint8_t)) == cudaSuccess);
+        GPUJPEG_ASSERT(gpuMallocHost((void**)&data, component->data_size * sizeof(uint8_t)) == gpuSuccess);
         for ( int y = 0; y < height; y++ ) {
             for ( int x = 0; x < width; x++ ) {
                 for ( int c = 0; c < (GPUJPEG_BLOCK_SIZE * GPUJPEG_BLOCK_SIZE); c++ ) {
@@ -251,7 +251,7 @@ gpujpeg_idct_cpu(struct gpujpeg_decoder* decoder)
                 }
             }
         }
-        cudaMemcpy(component->d_data, data, component->data_size * sizeof(uint8_t), cudaMemcpyHostToDevice);
-        cudaFreeHost(data);
+        gpuMemcpy(component->d_data, data, component->data_size * sizeof(uint8_t), gpuMemcpyHostToDevice);
+        gpuFreeHost(data);
     }
 }

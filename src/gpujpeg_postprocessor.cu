@@ -414,7 +414,7 @@ gpujpeg_postprocessor_decoder_init(struct gpujpeg_coder* coder)
  * @invariant gpujpeg_preprocessor_decode_no_transform(coder) != 0
  */
 static int
-gpujpeg_preprocessor_decoder_copy_planar_data(struct gpujpeg_coder * coder, cudaStream_t stream)
+gpujpeg_preprocessor_decoder_copy_planar_data(struct gpujpeg_coder * coder, gpuStream_t stream)
 {
     assert(coder->param.comp_count == 1 || coder->param.comp_count == 3);
     size_t data_raw_offset = 0;
@@ -426,7 +426,7 @@ gpujpeg_preprocessor_decoder_copy_planar_data(struct gpujpeg_coder * coder, cuda
     if (!needs_stride) {
             for ( int i = 0; i < coder->param.comp_count; ++i ) {
                     size_t component_size = coder->component[i].width * coder->component[i].height;
-                    cudaMemcpyAsync(coder->d_data_raw + data_raw_offset, coder->component[i].d_data, component_size, cudaMemcpyDeviceToDevice, stream);
+                    gpuMemcpyAsync(coder->d_data_raw + data_raw_offset, coder->component[i].d_data, component_size, gpuMemcpyDeviceToDevice, stream);
                     data_raw_offset += component_size;
             }
     } else {
@@ -434,7 +434,7 @@ gpujpeg_preprocessor_decoder_copy_planar_data(struct gpujpeg_coder * coder, cuda
                     int spitch = coder->component[i].data_width;
                     int dpitch = coder->component[i].width + coder->param_image.width_padding;
                     size_t component_size = dpitch * coder->component[i].height;
-                    cudaMemcpy2DAsync(coder->d_data_raw + data_raw_offset, dpitch, coder->component[i].d_data, spitch, coder->component[i].width, coder->component[i].height, cudaMemcpyDeviceToDevice, stream);
+                    gpuMemcpy2DAsync(coder->d_data_raw + data_raw_offset, dpitch, coder->component[i].d_data, spitch, coder->component[i].width, coder->component[i].height, gpuMemcpyDeviceToDevice, stream);
                     data_raw_offset += component_size;
             }
     }
@@ -452,7 +452,7 @@ gpujpeg_preprocessor_decoder_copy_planar_data(struct gpujpeg_coder * coder, cuda
 
 /* Documented at declaration */
 int
-gpujpeg_postprocessor_decode(struct gpujpeg_coder* coder, cudaStream_t stream)
+gpujpeg_postprocessor_decode(struct gpujpeg_coder* coder, gpuStream_t stream)
 {
     PERFORM_IF_ENABLED_CHECK(coder->preprocessor.flipped, gpujpeg_preprocessor_flip_lines(coder));
 

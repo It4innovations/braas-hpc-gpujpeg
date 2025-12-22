@@ -464,8 +464,8 @@ gpujpeg_preprocessor_encoder_copy_planar_data(struct gpujpeg_encoder * encoder)
     if (!needs_stride) {
             for ( int i = 0; i < coder->param.comp_count; ++i ) {
                     size_t component_size = coder->component[i].width * coder->component[i].height;
-                    cudaMemcpyAsync(coder->component[i].d_data, coder->d_data_raw + data_raw_offset, component_size,
-                                    cudaMemcpyDeviceToDevice, coder->stream);
+                    gpuMemcpyAsync(coder->component[i].d_data, coder->d_data_raw + data_raw_offset, component_size,
+                                    gpuMemcpyDeviceToDevice, coder->stream);
                     data_raw_offset += component_size;
             }
     } else {
@@ -473,8 +473,8 @@ gpujpeg_preprocessor_encoder_copy_planar_data(struct gpujpeg_encoder * encoder)
                     int spitch = coder->component[i].width + coder->param_image.width_padding;
                     int dpitch = coder->component[i].data_width;
                     size_t component_size = spitch * coder->component[i].height;
-                    cudaMemcpy2DAsync(coder->component[i].d_data, dpitch, coder->d_data_raw + data_raw_offset, spitch,
-                                      coder->component[i].width, coder->component[i].height, cudaMemcpyDeviceToDevice,
+                    gpuMemcpy2DAsync(coder->component[i].d_data, dpitch, coder->d_data_raw + data_raw_offset, spitch,
+                                      coder->component[i].width, coder->component[i].height, gpuMemcpyDeviceToDevice,
                                       coder->stream);
                     data_raw_offset += component_size;
             }

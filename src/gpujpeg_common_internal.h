@@ -204,6 +204,12 @@ struct gpujpeg_timer {
 #define GPUJPEG_CUSTOM_TIMER_DURATION(name) \
     (name).started == 1 ? gpujpeg_custom_timer_get_duration((name).start, (name).stop) : (name).started == 0 ? 0 : ( fprintf(stderr, "Debug timer disabled!\n"), 0)
 
+// Forward declaration for timer function
+float gpujpeg_custom_timer_get_duration(gpuEvent_t start, gpuEvent_t stop);
+
+// Error string wrapper for HIP compatibility
+const char* gpujpeg_get_error_string(gpuError_t error);
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -452,7 +458,7 @@ gpujpeg_coder_init(struct gpujpeg_coder* coder);
  * @return size of allocated device memory in bytes if succeeds, otherwise 0
  */
 size_t
-gpujpeg_coder_init_image(struct gpujpeg_coder * coder, const struct gpujpeg_parameters * param, const struct gpujpeg_image_parameters * param_image, cudaStream_t stream);
+gpujpeg_coder_init_image(struct gpujpeg_coder * coder, const struct gpujpeg_parameters * param, const struct gpujpeg_image_parameters * param_image, gpuStream_t stream);
 
 /**
  * @brief allocate buffers for CPU Huffman coder
@@ -517,8 +523,9 @@ gpujpeg_image_parameters_equals(const struct gpujpeg_image_parameters *p1 , cons
  *
  * @returns duration in ms, 0.0F in case of error
  */
-float
-gpujpeg_custom_timer_get_duration(cudaEvent_t start, cudaEvent_t stop);
+gpuError_t
+gpujpeg_cuda_memcpy_async_partially_pinned(void* dst, const void* src, size_t count, enum gpuMemcpyKind kind,
+                                           gpuStream_t stream, size_t pinned_sz);
 
 /**
  * @sa MK_SUBSAMPLING
@@ -539,10 +546,6 @@ gpujpeg_make_sampling_factor(int comp_count, int comp1_h, int comp1_v, int comp2
                                  (sampling_factor)[1].horizontal, (sampling_factor)[1].vertical,                       \
                                  (sampling_factor)[2].horizontal, (sampling_factor)[2].vertical,                       \
                                  (sampling_factor)[3].horizontal, (sampling_factor)[3].vertical)
-
-cudaError_t
-gpujpeg_cuda_memcpy_async_partially_pinned(void* dst, const void* src, size_t count, enum cudaMemcpyKind kind,
-                                           cudaStream_t stream, size_t pinned_sz);
 
 void*
 gpujpeg_cuda_malloc_host(size_t size);
