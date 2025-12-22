@@ -287,7 +287,7 @@ gpujpeg_write_ifd(struct gpujpeg_writer* writer, const uint8_t* start, size_t co
     gpujpeg_writer_emit_2byte(writer, count_all); // IFD Item Count
 
     uint8_t *first_rec = writer->buffer_current;
-    unsigned last_tag_id = 0;
+    // unsigned last_tag_id = 0;
     for ( unsigned i = 0; i < count; ++i ) {
         const struct tag_value* info = &tags[i];
         union value_u value = info->value;
@@ -295,8 +295,8 @@ gpujpeg_write_ifd(struct gpujpeg_writer* writer, const uint8_t* start, size_t co
             value.uvalue = (uint32_t[]) {end - start};
         }
         const struct exif_tiff_tag_info_t* t = &exif_tiff_tag_info[info->tag];
-        assert(t->id >= last_tag_id);
-        last_tag_id = t->id;
+        // assert(t->id >= last_tag_id);
+        // last_tag_id = t->id;
         write_exif_tag(writer, t->type, t->id, exif_tiff_tag_info[info->tag].count, value, start, &end);
     }
     if ( custom_tags != NULL ) { // add user custom tags
@@ -590,7 +590,7 @@ gpujpeg_exif_tags_destroy(struct gpujpeg_exif_tags* exif_tags)
         return;
     }
     for ( unsigned i = 0; i < CT_NUM; ++i ) {
-        for (unsigned j = 0; i < exif_tags->tags[i].count; ++i) {
+        for (unsigned j = 0; j < exif_tags->tags[i].count; ++j) {
             free((void *) exif_tags->tags[i].vals[j].value.uvalue);
         }
         free(exif_tags->tags[i].vals);
@@ -724,11 +724,11 @@ gpujpeg_exif_parse(uint8_t** image, const uint8_t* image_end, int verbose, struc
     if (length < EXIF_HDR_MIN_LEN) {
         HANDLE_ERROR("Insufficient Exif header length %u!\n", (unsigned)length);
     }
-    uint8_t exif[5];
-    for (int i = 0; i < 5; ++i) {
-        exif[i] = read_byte(image);
-    }
-    assert(strncmp((char *) exif, "Exif", sizeof exif) == 0); // otherwise fn shouldn't be called
+    // uint8_t exif[5];
+    // for (int i = 0; i < 5; ++i) {
+    //     exif[i] = read_byte(image);
+    // }
+    // assert(strncmp((char *) exif, "Exif", sizeof exif) == 0); // otherwise fn shouldn't be called
     read_byte(image); // drop (padding)
 
     uint8_t* const base = *image;

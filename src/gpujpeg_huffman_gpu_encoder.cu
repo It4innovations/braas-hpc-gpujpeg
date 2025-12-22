@@ -411,7 +411,7 @@ gpujpeg_huffman_encoder_encode_kernel_warp(
  * @return void
  */
 #if __CUDA_ARCH__ >= 200
-__launch_bounds__(SERIALIZATION_THREADS_PER_TBLOCK, 1536 / SERIALIZATION_THREADS_PER_TBLOCK)
+__launch_bounds__(SERIALIZATION_THREADS_PER_TBLOCK, 4)
 #endif
 __global__ static void
 gpujpeg_huffman_encoder_serialization_kernel(

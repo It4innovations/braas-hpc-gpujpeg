@@ -392,7 +392,7 @@ __global__ void
 #if __CUDA_ARCH__ < 200
 __launch_bounds__(THREADS_PER_TBLOCK, 2)
 #else
-__launch_bounds__(THREADS_PER_TBLOCK, 6)
+__launch_bounds__(THREADS_PER_TBLOCK, 4)
 #endif
 gpujpeg_huffman_decoder_decode_kernel(
     struct gpujpeg_huffman_gpu_decoder huffman_gpu_decoder,
