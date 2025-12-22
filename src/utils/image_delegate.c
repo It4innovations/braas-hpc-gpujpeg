@@ -99,7 +99,7 @@ gpujpeg_cuda_free_host(void* ptr)
     if ( ptr == NULL ) {
         return;
     }
-    GPUJPEG_CHECK_EX(cudaFreeHost(ptr), "Could not free host pointer", );
+    GPUJPEG_CHECK_EX(gpuFreeHost(ptr), "Could not free host pointer", );
 }
 
 static void*

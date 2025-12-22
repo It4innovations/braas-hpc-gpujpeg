@@ -7,7 +7,7 @@
 
 #ifdef GPUJPEG_USE_SYCL
 
-#include <CL/sycl.hpp>
+#include <sycl/sycl.hpp>
 #include <map>
 #include <chrono>
 #include <cstring>

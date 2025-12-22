@@ -11,6 +11,8 @@
 #ifndef GPUJPEG_DEVICE_COMPAT_H
 #define GPUJPEG_DEVICE_COMPAT_H
 
+#include <stddef.h>  // for size_t
+
 // Determine which GPU backend to use
 // Check CMake-defined macros first, then fall back to compiler detection
 #if defined(GPUJPEG_USE_HIP)
@@ -206,7 +208,8 @@
 // ==============================================================================
 #elif defined(GPUJPEG_USE_SYCL)
 
-#include <CL/sycl.hpp>
+#ifdef __cplusplus
+#include <sycl/sycl.hpp>
 
 // For SYCL, we need wrapper types since SYCL has a different architecture
 // This is a simplified compatibility layer - full SYCL support would require
@@ -220,9 +223,15 @@ namespace gpujpeg_sycl {
 typedef sycl::queue* gpuStream_t;
 typedef int gpuError_t;
 typedef void* gpuEvent_t;
+#else
+// C-compatible forward declarations
+typedef void* gpuStream_t;
+typedef int gpuError_t;
+typedef void* gpuEvent_t;
+#endif // __cplusplus
 
 // Device properties structure
-typedef struct {
+typedef struct gpuDeviceProp {
     char name[256];
     size_t totalGlobalMem;
     size_t sharedMemPerBlock;
@@ -267,11 +276,11 @@ gpuError_t gpuHostRegister(void* ptr, size_t size, unsigned int flags);
 gpuError_t gpuHostUnregister(void* ptr);
 
 // Memory copy kinds
-enum {
+typedef enum gpuMemcpyKind {
     gpuMemcpyHostToDevice = 1,
     gpuMemcpyDeviceToHost = 2,
     gpuMemcpyDeviceToDevice = 3
-};
+} gpuMemcpyKind;
 
 // Host register flags
 enum {
@@ -279,7 +288,11 @@ enum {
 };
 
 // Stream management
+#ifdef __cplusplus
 #define gpuStreamDefault                    (gpujpeg_sycl::default_queue)
+#else
+#define gpuStreamDefault                    ((gpuStream_t)0)
+#endif
 gpuError_t gpuStreamSynchronize(gpuStream_t stream);
 
 // Event management

@@ -8,6 +8,8 @@ option(GPUJPEG_USE_SYCL "Build with SYCL backend for Intel/other GPUs" OFF)
 # Determine project languages based on GPU backend
 if(GPUJPEG_USE_HIP)
     project(gpujpeg VERSION 0.27.10 LANGUAGES C CXX)
+elseif(GPUJPEG_USE_SYCL)
+    project(gpujpeg VERSION 0.27.10 LANGUAGES C CXX)
 else()
     project(gpujpeg VERSION 0.27.10 LANGUAGES C CUDA)
 endif()
@@ -45,6 +47,7 @@ elseif(GPUJPEG_USE_SYCL)
                         "Please set CMAKE_CXX_COMPILER to icpx or dpcpp.")
     endif()
     
+    # Add SYCL flags to C++ compiler only (C files will use forward declarations)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl")
     
 else()
