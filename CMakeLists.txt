@@ -152,6 +152,13 @@ file(GLOB GPUJPEG_COMMON_SOURCES src/*.c)
 list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c")
 list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/getopt.c")
 
+# Add utility source files
+list(APPEND GPUJPEG_COMMON_SOURCES
+    src/utils/image_delegate.c
+    src/utils/pam.c
+    src/utils/y4m.c
+)
+
 # GPU kernel sources - different per backend
 if(GPU_BACKEND STREQUAL "CUDA")
     # Use .cu files directly for CUDA
@@ -164,7 +171,9 @@ if(GPU_BACKEND STREQUAL "CUDA")
     )
     
     # CUDA-specific compiler flags
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -fPIC")
+    if(NOT WIN32)
+        set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler -fPIC")
+    endif()
     
     # Set CUDA architecture (adjust as needed)
     if(NOT CMAKE_CUDA_ARCHITECTURES OR CMAKE_CUDA_ARCHITECTURES MATCHES OFF)
@@ -183,7 +192,9 @@ elseif(GPU_BACKEND STREQUAL "HIP")
     )
     
     # HIP-specific compiler flags
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+    if(NOT WIN32)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+    endif()
     
     # Optionally specify GPU architecture for HIP
     # set(CMAKE_HIP_ARCHITECTURES gfx906 gfx908 gfx90a gfx1030)
@@ -197,7 +208,10 @@ elseif(GPU_BACKEND STREQUAL "SYCL")
     # You would need to add SYCL kernel implementations here
     
     # SYCL-specific compiler flags
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl -fPIC")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl")
+    if(NOT WIN32)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+    endif()
 endif()
 
 add_library(gpujpeg ${H_FILES} ${GPUJPEG_COMMON_SOURCES} ${GPUJPEG_GPU_SOURCES})
