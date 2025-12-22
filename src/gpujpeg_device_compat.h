@@ -221,6 +221,26 @@ typedef sycl::queue* gpuStream_t;
 typedef int gpuError_t;
 typedef void* gpuEvent_t;
 
+// Device properties structure
+typedef struct {
+    char name[256];
+    size_t totalGlobalMem;
+    size_t sharedMemPerBlock;
+    int regsPerBlock;
+    int warpSize;
+    size_t memPitch;
+    int maxThreadsPerBlock;
+    int maxThreadsDim[3];
+    int maxGridSize[3];
+    int clockRate;
+    size_t totalConstMem;
+    int major;
+    int minor;
+    size_t textureAlignment;
+    int deviceOverlap;
+    int multiProcessorCount;
+} gpuDeviceProp;
+
 // Error codes
 #define gpuSuccess                          0
 
@@ -241,12 +261,21 @@ gpuError_t gpuMemcpyToSymbol(const void* symbol, const void* src, size_t count,
                              size_t offset, int kind);
 gpuError_t gpuMemcpyToSymbolAsync(const void* symbol, const void* src, size_t count, 
                                   size_t offset, int kind, gpuStream_t stream);
+gpuError_t gpuMemset(void* ptr, int value, size_t count);
+gpuError_t gpuMemsetAsync(void* ptr, int value, size_t count, gpuStream_t stream);
+gpuError_t gpuHostRegister(void* ptr, size_t size, unsigned int flags);
+gpuError_t gpuHostUnregister(void* ptr);
 
 // Memory copy kinds
 enum {
     gpuMemcpyHostToDevice = 1,
     gpuMemcpyDeviceToHost = 2,
     gpuMemcpyDeviceToDevice = 3
+};
+
+// Host register flags
+enum {
+    gpuHostRegisterDefault = 0
 };
 
 // Stream management
@@ -262,6 +291,12 @@ gpuError_t gpuEventElapsedTime(float* ms, gpuEvent_t start, gpuEvent_t end);
 
 // Device management
 gpuError_t gpuSetDevice(int device);
+gpuError_t gpuGetDevice(int* device);
+gpuError_t gpuGetDeviceCount(int* count);
+gpuError_t gpuGetDeviceProperties(gpuDeviceProp* prop, int device);
+gpuError_t gpuDeviceReset(void);
+gpuError_t gpuDriverGetVersion(int* driverVersion);
+gpuError_t gpuRuntimeGetVersion(int* runtimeVersion);
 gpuError_t gpuGetLastError(void);
 const char* gpuGetErrorString(gpuError_t error);
 
