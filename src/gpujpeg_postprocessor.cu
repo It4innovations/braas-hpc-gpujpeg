@@ -178,8 +178,6 @@ struct post_load<in_is_rgb, GPUJPEG_DYNAMIC>
  * @param pixel_count  Number of pixels to copy
  * @return void
  */
-typedef void (*gpujpeg_preprocessor_decode_kernel)(struct gpujpeg_preprocessor_data data, uint8_t* d_data_raw,
-                                                   int width_padding, int image_width, int image_height);
 
 template<
     enum gpujpeg_color_space color_space_internal,
@@ -217,15 +215,40 @@ gpujpeg_preprocessor_comp_to_raw_kernel(GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA str
 }
 
 /**
- * Select preprocessor decode kernel
+ * Check if preprocessor decode kernel exists for given configuration
  *
- * @param decoder
- * @return kernel
+ * @param coder
+ * @return true if kernel exists
  */
 template<enum gpujpeg_color_space color_space_internal>
-gpujpeg_preprocessor_decode_kernel
-gpujpeg_preprocessor_select_decode_kernel(struct gpujpeg_coder* coder)
+bool
+gpujpeg_preprocessor_has_decode_kernel(struct gpujpeg_coder* coder)
 {
+    // All color space and pixel format combinations are supported
+    return true;
+}
+
+/**
+ * Launch preprocessor decode kernel
+ *
+ * @param coder
+ * @param grid
+ * @param threads
+ * @param stream
+ * @return 0 on success, -1 on error
+ */
+template<enum gpujpeg_color_space color_space_internal>
+static int
+gpujpeg_preprocessor_launch_decode_kernel(struct gpujpeg_coder* coder, dim3 grid, dim3 threads, gpuStream_t stream)
+{
+    int image_width = coder->param_image.width;
+    int image_height = coder->param_image.height;
+
+    // When saving 4:2:2 data of odd width, the data should have even width, so round it
+    if (coder->param_image.pixel_format == GPUJPEG_422_U8_P1020) {
+        image_width = gpujpeg_div_and_round_up(coder->param_image.width, 2) * 2;
+    }
+
     gpujpeg_sampling_factor_t sampling_factor = gpujpeg_preprocessor_make_sampling_factor_i(
         coder->param.comp_count, coder->sampling_factor.horizontal, coder->sampling_factor.vertical,
         coder->component[0].sampling_factor.horizontal, coder->component[0].sampling_factor.vertical,
@@ -233,75 +256,73 @@ gpujpeg_preprocessor_select_decode_kernel(struct gpujpeg_coder* coder)
         coder->component[2].sampling_factor.horizontal, coder->component[2].sampling_factor.vertical,
         coder->component[3].sampling_factor.horizontal, coder->component[3].sampling_factor.vertical);
 
-#define RETURN_KERNEL_SWITCH(PIXEL_FORMAT, COLOR, P1, P2, P3, P4, P5, P6, P7, P8)                                      \
-    switch ( PIXEL_FORMAT ) {                                                                                          \
-    case GPUJPEG_U8:                                                                                                   \
-        return &gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, GPUJPEG_U8, P1, P2, P3, P4, P5,   \
-                                                        P6, P7, P8>;                                                   \
-    case GPUJPEG_444_U8_P012:                                                                                          \
-        return &gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, GPUJPEG_444_U8_P012, P1, P2, P3,  \
-                                                        P4, P5, P6, P7, P8>;                                           \
-    case GPUJPEG_4444_U8_P0123:                                                                                        \
-        return &gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, GPUJPEG_4444_U8_P0123, P1, P2,    \
-                                                        P3, P4, P5, P6, P7, P8>;                                       \
-    case GPUJPEG_422_U8_P1020:                                                                                         \
-        return &gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, GPUJPEG_422_U8_P1020, P1, P2, P3, \
-                                                        P4, P5, P6, P7, P8>;                                           \
-    case GPUJPEG_444_U8_P0P1P2:                                                                                        \
-        return &gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, GPUJPEG_444_U8_P0P1P2, P1, P2,    \
-                                                        P3, P4, P5, P6, P7, P8>;                                       \
-    case GPUJPEG_422_U8_P0P1P2:                                                                                        \
-        return &gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, GPUJPEG_422_U8_P0P1P2, P1, P2,    \
-                                                        P3, P4, P5, P6, P7, P8>;                                       \
-    case GPUJPEG_420_U8_P0P1P2:                                                                                        \
-        return &gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, GPUJPEG_420_U8_P0P1P2, P1, P2,    \
-                                                        P3, P4, P5, P6, P7, P8>;                                       \
-    case GPUJPEG_PIXFMT_NONE:                                                                                          \
-        GPUJPEG_ASSERT(0 && "Postprocess to GPUJPEG_PIXFMT_NONE not allowed");                                         \
+#define LAUNCH_KERNEL(PIXEL_FORMAT, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
+        GPU_KERNEL_LAUNCH((gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, PIXEL_FORMAT, P1, P2, P3, P4, P5, P6, P7, P8>), \
+            grid, threads, 0, stream, \
+            coder->preprocessor.data, \
+            coder->d_data_raw, \
+            coder->param_image.width_padding, \
+            image_width, \
+            image_height \
+        ); \
+        gpujpeg_cuda_check_error("Preprocessor encoding failed", return -1); \
+        return 0;
+
+#define LAUNCH_KERNEL_SWITCH(PIXEL_FORMAT, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
+    switch ( PIXEL_FORMAT ) { \
+    case GPUJPEG_U8: LAUNCH_KERNEL(GPUJPEG_U8, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
+    case GPUJPEG_444_U8_P012: LAUNCH_KERNEL(GPUJPEG_444_U8_P012, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
+    case GPUJPEG_4444_U8_P0123: LAUNCH_KERNEL(GPUJPEG_4444_U8_P0123, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
+    case GPUJPEG_422_U8_P1020: LAUNCH_KERNEL(GPUJPEG_422_U8_P1020, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
+    case GPUJPEG_444_U8_P0P1P2: LAUNCH_KERNEL(GPUJPEG_444_U8_P0P1P2, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
+    case GPUJPEG_422_U8_P0P1P2: LAUNCH_KERNEL(GPUJPEG_422_U8_P0P1P2, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
+    case GPUJPEG_420_U8_P0P1P2: LAUNCH_KERNEL(GPUJPEG_420_U8_P0P1P2, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
+    case GPUJPEG_PIXFMT_NONE: \
+        GPUJPEG_ASSERT(0 && "Postprocess to GPUJPEG_PIXFMT_NONE not allowed"); \
     }
 
-#define RETURN_KERNEL_IF(PIXEL_FORMAT, COLOR, COMP_COUNT, P1, P2, P3, P4, P5, P6, P7, P8) \
+#define LAUNCH_KERNEL_IF(PIXEL_FORMAT, COLOR, COMP_COUNT, P1, P2, P3, P4, P5, P6, P7, P8) \
     if ( sampling_factor == gpujpeg_make_sampling_factor(COMP_COUNT, P1, P2, P3, P4, P5, P6, P7, P8) ) { \
-        if ( coder->param.verbose >= GPUJPEG_LL_VERBOSE ) {                                                            \
-            print_kernel_configuration(                                                                                \
-                "Using faster kernel for postprocessor (precompiled %dx%d, %dx%d, %dx%d, %dx%d).\n");                  \
+        if ( coder->param.verbose >= GPUJPEG_LL_VERBOSE ) { \
+            print_kernel_configuration( \
+                "Using faster kernel for postprocessor (precompiled %dx%d, %dx%d, %dx%d, %dx%d).\n"); \
         } \
-        RETURN_KERNEL_SWITCH(PIXEL_FORMAT, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
+        LAUNCH_KERNEL_SWITCH(PIXEL_FORMAT, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
     }
 
-#define RETURN_KERNEL(PIXEL_FORMAT, COLOR) \
-    RETURN_KERNEL_IF(PIXEL_FORMAT, COLOR, 3, 1, 1, 1, 1, 1, 1, 0, 0) /* 4:4:4 */ \
-    else RETURN_KERNEL_IF(PIXEL_FORMAT, COLOR, 3, 1, 1, 2, 2, 2, 2, 0, 0) /* 4:2:0 */ \
-    else RETURN_KERNEL_IF(PIXEL_FORMAT, COLOR, 3, 1, 1, 1, 2, 1, 2, 0, 0) /* 4:4:0 */ \
-    else RETURN_KERNEL_IF(PIXEL_FORMAT, COLOR, 3, 1, 1, 2, 1, 2, 1, 0, 0) /* 4:2:2 */ \
+#define LAUNCH_KERNEL_FOR_FORMAT(PIXEL_FORMAT, COLOR) \
+    LAUNCH_KERNEL_IF(PIXEL_FORMAT, COLOR, 3, 1, 1, 1, 1, 1, 1, 0, 0) /* 4:4:4 */ \
+    else LAUNCH_KERNEL_IF(PIXEL_FORMAT, COLOR, 3, 1, 1, 2, 2, 2, 2, 0, 0) /* 4:2:0 */ \
+    else LAUNCH_KERNEL_IF(PIXEL_FORMAT, COLOR, 3, 1, 1, 1, 2, 1, 2, 0, 0) /* 4:4:0 */ \
+    else LAUNCH_KERNEL_IF(PIXEL_FORMAT, COLOR, 3, 1, 1, 2, 1, 2, 1, 0, 0) /* 4:2:2 */ \
     else { \
-        if ( coder->param.verbose >= GPUJPEG_LL_INFO ) {                                                               \
-            print_kernel_configuration(                                                                                \
-                "Using slower kernel for postprocessor (dynamic %dx%d, %dx%d, %dx%d, %dx%d).\n");                      \
+        if ( coder->param.verbose >= GPUJPEG_LL_INFO ) { \
+            print_kernel_configuration( \
+                "Using slower kernel for postprocessor (dynamic %dx%d, %dx%d, %dx%d, %dx%d).\n"); \
         } \
-        RETURN_KERNEL_SWITCH(PIXEL_FORMAT, COLOR, GPUJPEG_DYNAMIC, GPUJPEG_DYNAMIC, GPUJPEG_DYNAMIC, GPUJPEG_DYNAMIC, GPUJPEG_DYNAMIC, GPUJPEG_DYNAMIC, GPUJPEG_DYNAMIC, GPUJPEG_DYNAMIC) \
-    } \
+        LAUNCH_KERNEL_SWITCH(PIXEL_FORMAT, COLOR, GPUJPEG_DYNAMIC, GPUJPEG_DYNAMIC, GPUJPEG_DYNAMIC, GPUJPEG_DYNAMIC, GPUJPEG_DYNAMIC, GPUJPEG_DYNAMIC, GPUJPEG_DYNAMIC, GPUJPEG_DYNAMIC) \
+    }
 
     // RGB color space
     if ( coder->param_image.color_space == GPUJPEG_RGB ) {
-        RETURN_KERNEL(coder->param_image.pixel_format, GPUJPEG_RGB)
+        LAUNCH_KERNEL_FOR_FORMAT(coder->param_image.pixel_format, GPUJPEG_RGB)
     }
     // YCbCr color space
     else if ( coder->param_image.color_space == GPUJPEG_YCBCR_BT601 ) {
-        RETURN_KERNEL(coder->param_image.pixel_format, GPUJPEG_YCBCR_BT601)
+        LAUNCH_KERNEL_FOR_FORMAT(coder->param_image.pixel_format, GPUJPEG_YCBCR_BT601)
     }
     // YCbCr color space
     else if ( coder->param_image.color_space == GPUJPEG_YCBCR_BT601_256LVLS ) {
-        RETURN_KERNEL(coder->param_image.pixel_format, GPUJPEG_YCBCR_BT601_256LVLS)
+        LAUNCH_KERNEL_FOR_FORMAT(coder->param_image.pixel_format, GPUJPEG_YCBCR_BT601_256LVLS)
     }
     // YCbCr color space
     else if ( coder->param_image.color_space == GPUJPEG_YCBCR_BT709 ) {
-        RETURN_KERNEL(coder->param_image.pixel_format, GPUJPEG_YCBCR_BT709)
+        LAUNCH_KERNEL_FOR_FORMAT(coder->param_image.pixel_format, GPUJPEG_YCBCR_BT709)
     }
 #ifndef ENABLE_YUV
     // YUV color space
     else if ( coder->param_image.color_space == GPUJPEG_YUV ) {
-        RETURN_KERNEL(coder->param_image.pixel_format, GPUJPEG_YUV)
+        LAUNCH_KERNEL_FOR_FORMAT(coder->param_image.pixel_format, GPUJPEG_YUV)
     }
 #endif
     // Unknown color space
@@ -309,11 +330,12 @@ gpujpeg_preprocessor_select_decode_kernel(struct gpujpeg_coder* coder)
         assert(false);
     }
 
-#undef RETURN_KERNEL_SWITCH
-#undef RETURN_KERNEL_IF
-#undef RETURN_KERNEL
+#undef LAUNCH_KERNEL_SWITCH
+#undef LAUNCH_KERNEL_IF
+#undef LAUNCH_KERNEL_FOR_FORMAT
+#undef LAUNCH_KERNEL
 
-    return NULL;
+    return -1;
 }
 
 static bool
@@ -371,27 +393,27 @@ gpujpeg_postprocessor_decoder_init(struct gpujpeg_coder* coder)
     // assert(coder->param.comp_count == 3 || coder->param.comp_count == 4);
 
     if (coder->param.color_space_internal == coder->param_image.color_space) {
-        if (gpujpeg_preprocessor_select_decode_kernel<GPUJPEG_NONE>(coder) != nullptr) {
+        if (gpujpeg_preprocessor_has_decode_kernel<GPUJPEG_NONE>(coder)) {
             coder->preprocessor.kernel_type = GPUJPEG_KERNEL_TYPE_DECODE_NONE;
         }
     }
     else if (coder->param.color_space_internal == GPUJPEG_RGB) {
-        if (gpujpeg_preprocessor_select_decode_kernel<GPUJPEG_RGB>(coder) != nullptr) {
+        if (gpujpeg_preprocessor_has_decode_kernel<GPUJPEG_RGB>(coder)) {
             coder->preprocessor.kernel_type = GPUJPEG_KERNEL_TYPE_DECODE_RGB;
         }
     }
     else if (coder->param.color_space_internal == GPUJPEG_YCBCR_BT601) {
-        if (gpujpeg_preprocessor_select_decode_kernel<GPUJPEG_YCBCR_BT601>(coder) != nullptr) {
+        if (gpujpeg_preprocessor_has_decode_kernel<GPUJPEG_YCBCR_BT601>(coder)) {
             coder->preprocessor.kernel_type = GPUJPEG_KERNEL_TYPE_DECODE_YCBCR_BT601;
         }
     }
     else if (coder->param.color_space_internal == GPUJPEG_YCBCR_BT601_256LVLS) {
-        if (gpujpeg_preprocessor_select_decode_kernel<GPUJPEG_YCBCR_BT601_256LVLS>(coder) != nullptr) {
+        if (gpujpeg_preprocessor_has_decode_kernel<GPUJPEG_YCBCR_BT601_256LVLS>(coder)) {
             coder->preprocessor.kernel_type = GPUJPEG_KERNEL_TYPE_DECODE_YCBCR_BT601_256LVLS;
         }
     }
     else if (coder->param.color_space_internal == GPUJPEG_YCBCR_BT709) {
-        if (gpujpeg_preprocessor_select_decode_kernel<GPUJPEG_YCBCR_BT709>(coder) != nullptr) {
+        if (gpujpeg_preprocessor_has_decode_kernel<GPUJPEG_YCBCR_BT709>(coder)) {
             coder->preprocessor.kernel_type = GPUJPEG_KERNEL_TYPE_DECODE_YCBCR_BT709;
         }
     }
@@ -462,37 +484,8 @@ gpujpeg_postprocessor_decode(struct gpujpeg_coder* coder, gpuStream_t stream)
         return gpujpeg_preprocessor_decoder_copy_planar_data(coder, stream);
     }
 
-    // Get kernel based on kernel type
-    gpujpeg_preprocessor_decode_kernel kernel = nullptr;
-    switch (coder->preprocessor.kernel_type) {
-        case GPUJPEG_KERNEL_TYPE_DECODE_NONE:
-            kernel = gpujpeg_preprocessor_select_decode_kernel<GPUJPEG_NONE>(coder);
-            break;
-        case GPUJPEG_KERNEL_TYPE_DECODE_RGB:
-            kernel = gpujpeg_preprocessor_select_decode_kernel<GPUJPEG_RGB>(coder);
-            break;
-        case GPUJPEG_KERNEL_TYPE_DECODE_YCBCR_BT601:
-            kernel = gpujpeg_preprocessor_select_decode_kernel<GPUJPEG_YCBCR_BT601>(coder);
-            break;
-        case GPUJPEG_KERNEL_TYPE_DECODE_YCBCR_BT601_256LVLS:
-            kernel = gpujpeg_preprocessor_select_decode_kernel<GPUJPEG_YCBCR_BT601_256LVLS>(coder);
-            break;
-        case GPUJPEG_KERNEL_TYPE_DECODE_YCBCR_BT709:
-            kernel = gpujpeg_preprocessor_select_decode_kernel<GPUJPEG_YCBCR_BT709>(coder);
-            break;
-        default:
-            assert(false && "Invalid kernel type for decoding");
-            return -1;
-    }
-    assert(kernel != nullptr);
-
     int image_width = coder->param_image.width;
     int image_height = coder->param_image.height;
-
-    // When saving 4:2:2 data of odd width, the data should have even width, so round it
-    if (coder->param_image.pixel_format == GPUJPEG_422_U8_P1020) {
-        image_width = gpujpeg_div_and_round_up(coder->param_image.width, 2) * 2;
-    }
 
     // Prepare unit size
     /// @todo this stuff doesn't look correct - we multiply by unitSize and then divide by it
@@ -511,15 +504,32 @@ gpujpeg_postprocessor_decode(struct gpujpeg_coder* coder, gpuStream_t stream)
         grid.x = GPUJPEG_CUDA_MAXIMUM_GRID_SIZE;
     }
 
-    // Run kernel
-    GPU_KERNEL_LAUNCH(kernel, grid, threads, 0, stream,
-        coder->preprocessor.data,
-        coder->d_data_raw,
-        coder->param_image.width_padding,
-        image_width,
-        image_height
-    );
-    gpujpeg_cuda_check_error("Preprocessor encoding failed", return -1);
+    // Launch kernel based on kernel type
+    int ret = -1;
+    switch (coder->preprocessor.kernel_type) {
+        case GPUJPEG_KERNEL_TYPE_DECODE_NONE:
+            ret = gpujpeg_preprocessor_launch_decode_kernel<GPUJPEG_NONE>(coder, grid, threads, stream);
+            break;
+        case GPUJPEG_KERNEL_TYPE_DECODE_RGB:
+            ret = gpujpeg_preprocessor_launch_decode_kernel<GPUJPEG_RGB>(coder, grid, threads, stream);
+            break;
+        case GPUJPEG_KERNEL_TYPE_DECODE_YCBCR_BT601:
+            ret = gpujpeg_preprocessor_launch_decode_kernel<GPUJPEG_YCBCR_BT601>(coder, grid, threads, stream);
+            break;
+        case GPUJPEG_KERNEL_TYPE_DECODE_YCBCR_BT601_256LVLS:
+            ret = gpujpeg_preprocessor_launch_decode_kernel<GPUJPEG_YCBCR_BT601_256LVLS>(coder, grid, threads, stream);
+            break;
+        case GPUJPEG_KERNEL_TYPE_DECODE_YCBCR_BT709:
+            ret = gpujpeg_preprocessor_launch_decode_kernel<GPUJPEG_YCBCR_BT709>(coder, grid, threads, stream);
+            break;
+        default:
+            assert(false && "Invalid kernel type for decoding");
+            return -1;
+    }
+
+    if (ret != 0) {
+        return ret;
+    }
 
     PERFORM_IF_ENABLED_CHECK(coder->preprocessor.channel_remap != 0, gpujpeg_preprocessor_channel_remap(coder));
 

@@ -33,6 +33,7 @@
 
 #include <assert.h>
 #include "../libgpujpeg/gpujpeg_type.h"
+#include "gpujpeg_device_compat.h"
 
 /**
  * Color transform debug info
@@ -49,7 +50,7 @@
 /**
  * Clip [0,255] range
  */
-inline __device__ uint8_t gpujpeg_clamp(int value)
+inline GPU_DEVICE uint8_t gpujpeg_clamp(int value)
 {
     value = (value >= 0) ? value : 0;
     value = (value <= 255) ? value : 255;
@@ -62,7 +63,7 @@ inline __device__ uint8_t gpujpeg_clamp(int value)
  * @param bit_depth
  */
 template<int bit_depth>
-inline __device__ void
+inline GPU_DEVICE void
 gpujpeg_color_transform_to(uchar4 &c, const int matrix[9], int base1, int base2, int base3)
 {
     // Prepare integer constants
@@ -84,7 +85,7 @@ gpujpeg_color_transform_to(uchar4 &c, const int matrix[9], int base1, int base2,
  * @param bit_depth
  */
 template<int bit_depth>
-inline __device__ void
+inline GPU_DEVICE void
 gpujpeg_color_transform_from(uchar4 & c, const int matrix[9], int base1, int base2, int base3)
 {
     // Prepare integer constants
@@ -106,15 +107,15 @@ gpujpeg_color_transform_from(uchar4 & c, const int matrix[9], int base1, int bas
  * @param bit_depth
  */
 template<int bit_depth>
-inline __device__ void
+inline GPU_DEVICE void
 gpujpeg_color_transform_to(uchar4 & c, const double matrix[9], int base1, int base2, int base3)
 {
     // Prepare integer matrix
     const int max = 1 << bit_depth;
     const int matrix_int[] = {
-        (int) round(matrix[0] * max), (int) round(matrix[1] * max), (int) round(matrix[2] * max),
-        (int) round(matrix[3] * max), (int) round(matrix[4] * max), (int) round(matrix[5] * max),
-        (int) round(matrix[6] * max), (int) round(matrix[7] * max), (int) round(matrix[8] * max),
+        (int) GPU_ROUND(matrix[0] * max), (int) GPU_ROUND(matrix[1] * max), (int) GPU_ROUND(matrix[2] * max),
+        (int) GPU_ROUND(matrix[3] * max), (int) GPU_ROUND(matrix[4] * max), (int) GPU_ROUND(matrix[5] * max),
+        (int) GPU_ROUND(matrix[6] * max), (int) GPU_ROUND(matrix[7] * max), (int) GPU_ROUND(matrix[8] * max),
     };
 // #if __CUDA_ARCH__ >= 200
 //     if ( threadIdx.x == 0 && threadIdx.y == 0 && blockIdx.x == 0 && blockIdx.y == 0 ) {
@@ -133,15 +134,15 @@ gpujpeg_color_transform_to(uchar4 & c, const double matrix[9], int base1, int ba
  * @param bit_depth
  */
 template<int bit_depth>
-inline __device__ void
+inline GPU_DEVICE void
 gpujpeg_color_transform_from(uint8_t & c, const double matrix[9], int base1, int base2, int base3)
 {
     // Prepare integer matrix
     const int max = 1 << bit_depth;
     const int matrix_int[] = {
-        (int) round(matrix[0] * max), (int) round(matrix[1] * max), (int) round(matrix[2] * max),
-        (int) round(matrix[3] * max), (int) round(matrix[4] * max), (int) round(matrix[5] * max),
-        (int) round(matrix[6] * max), (int) round(matrix[7] * max), (int) round(matrix[8] * max),
+        (int) GPU_ROUND(matrix[0] * max), (int) GPU_ROUND(matrix[1] * max), (int) GPU_ROUND(matrix[2] * max),
+        (int) GPU_ROUND(matrix[3] * max), (int) GPU_ROUND(matrix[4] * max), (int) GPU_ROUND(matrix[5] * max),
+        (int) GPU_ROUND(matrix[6] * max), (int) GPU_ROUND(matrix[7] * max), (int) GPU_ROUND(matrix[8] * max),
     };
 // #if __CUDA_ARCH__ >= 200
 //     if ( threadIdx.x == 0 && threadIdx.y == 0 && blockIdx.x == 0 && blockIdx.y == 0 ) {
@@ -163,7 +164,7 @@ gpujpeg_color_transform_from(uint8_t & c, const double matrix[9], int base1, int
 template<enum gpujpeg_color_space color_space_from, enum gpujpeg_color_space color_space_to>
 struct gpujpeg_color_transform
 {
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         GPUJPEG_COLOR_TRANSFORM_DEBUG(color_space_from, color_space_to, "Undefined");
         assert(false);
@@ -174,7 +175,7 @@ struct gpujpeg_color_transform
 template<enum gpujpeg_color_space color_space>
 struct gpujpeg_color_transform<color_space, color_space> {
     /** None transform */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         GPUJPEG_COLOR_TRANSFORM_DEBUG(color_space, color_space, "Do nothing");
         // Same color space thus do nothing
@@ -185,7 +186,7 @@ struct gpujpeg_color_transform<color_space, color_space> {
 template<enum gpujpeg_color_space color_space>
 struct gpujpeg_color_transform<GPUJPEG_NONE, color_space> {
     /** None transform */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         GPUJPEG_COLOR_TRANSFORM_DEBUG(GPUJPEG_NONE, color_space, "Do nothing");
         // None color space thus do nothing
@@ -195,7 +196,7 @@ struct gpujpeg_color_transform<GPUJPEG_NONE, color_space> {
 template<enum gpujpeg_color_space color_space>
 struct gpujpeg_color_transform<color_space, GPUJPEG_NONE> {
     /** None transform */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         GPUJPEG_COLOR_TRANSFORM_DEBUG(color_space, GPUJPEG_NONE, "Do nothing");
         // None color space thus do nothing
@@ -205,7 +206,7 @@ struct gpujpeg_color_transform<color_space, GPUJPEG_NONE> {
 template<>
 struct gpujpeg_color_transform<GPUJPEG_NONE, GPUJPEG_NONE> {
     /** None transform */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         GPUJPEG_COLOR_TRANSFORM_DEBUG(GPUJPEG_NONE, GPUJPEG_NONE, "Do nothing");
         // None color space thus do nothing
@@ -216,7 +217,7 @@ struct gpujpeg_color_transform<GPUJPEG_NONE, GPUJPEG_NONE> {
 template<>
 struct gpujpeg_color_transform<GPUJPEG_RGB, GPUJPEG_YCBCR_BT601> {
     /** RGB -> YCbCr (ITU-R Recommendation BT.601) transform (8 bit) */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         GPUJPEG_COLOR_TRANSFORM_DEBUG(GPUJPEG_RGB, GPUJPEG_YCBCR_BT601, "Transformation");
         // Source: http://www.equasys.de/colorconversion.html
@@ -233,7 +234,7 @@ struct gpujpeg_color_transform<GPUJPEG_RGB, GPUJPEG_YCBCR_BT601> {
 template<>
 struct gpujpeg_color_transform<GPUJPEG_YCBCR_BT601, GPUJPEG_RGB> {
     /** YCbCr (ITU-R Recommendation BT.601) -> RGB transform (8 bit) */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         GPUJPEG_COLOR_TRANSFORM_DEBUG(GPUJPEG_YCBCR_BT601, GPUJPEG_RGB, "Transformation");
         // Source: http://www.equasys.de/colorconversion.html
@@ -251,7 +252,7 @@ struct gpujpeg_color_transform<GPUJPEG_YCBCR_BT601, GPUJPEG_RGB> {
 template<>
 struct gpujpeg_color_transform<GPUJPEG_RGB, GPUJPEG_YCBCR_BT601_256LVLS> {
     /** RGB -> YCbCr (ITU-R Recommendation BT.601 with 256 levels) transform (8 bit) */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         GPUJPEG_COLOR_TRANSFORM_DEBUG(GPUJPEG_RGB, GPUJPEG_YCBCR_BT601_256LVLS, "Transformation");
         // Source: http://www.ecma-international.org/publications/files/ECMA-TR/TR-098.pdf, page 3
@@ -268,7 +269,7 @@ struct gpujpeg_color_transform<GPUJPEG_RGB, GPUJPEG_YCBCR_BT601_256LVLS> {
 template<>
 struct gpujpeg_color_transform<GPUJPEG_YCBCR_BT601_256LVLS, GPUJPEG_RGB> {
     /** YCbCr (ITU-R Recommendation BT.601 with 256 levels) -> RGB transform (8 bit) */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         GPUJPEG_COLOR_TRANSFORM_DEBUG(GPUJPEG_YCBCR_BT601_256LVLS, GPUJPEG_RGB, "Transformation");
         // Source: http://www.ecma-international.org/publications/files/ECMA-TR/TR-098.pdf, page 4
@@ -286,7 +287,7 @@ struct gpujpeg_color_transform<GPUJPEG_YCBCR_BT601_256LVLS, GPUJPEG_RGB> {
 template<>
 struct gpujpeg_color_transform<GPUJPEG_RGB, GPUJPEG_YCBCR_BT709> {
     /** RGB -> YCbCr (ITU-R Recommendation BT.709) transform (8 bit) */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         GPUJPEG_COLOR_TRANSFORM_DEBUG(GPUJPEG_RGB, GPUJPEG_YCBCR_BT709, "Transformation");
         // Source: http://www.equasys.de/colorconversion.html
@@ -303,7 +304,7 @@ struct gpujpeg_color_transform<GPUJPEG_RGB, GPUJPEG_YCBCR_BT709> {
 template<>
 struct gpujpeg_color_transform<GPUJPEG_YCBCR_BT709, GPUJPEG_RGB> {
     /** YCbCr (ITU-R Recommendation BT.709) -> RGB transform (8 bit) */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         GPUJPEG_COLOR_TRANSFORM_DEBUG(GPUJPEG_YCBCR_BT709, GPUJPEG_RGB, "Transformation");
         // Source: http://www.equasys.de/colorconversion.html
@@ -321,7 +322,7 @@ struct gpujpeg_color_transform<GPUJPEG_YCBCR_BT709, GPUJPEG_RGB> {
 template<>
 struct gpujpeg_color_transform<GPUJPEG_RGB, GPUJPEG_YUV> {
     /** RGB -> YUV transform (8 bit) */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         GPUJPEG_COLOR_TRANSFORM_DEBUG(GPUJPEG_RGB, GPUJPEG_YUV, "Transformation");
         /*const double matrix[] = {
@@ -337,7 +338,7 @@ struct gpujpeg_color_transform<GPUJPEG_RGB, GPUJPEG_YUV> {
 template<>
 struct gpujpeg_color_transform<GPUJPEG_YUV, GPUJPEG_RGB> {
     /** YUV -> RGB transform (8 bit) */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         GPUJPEG_COLOR_TRANSFORM_DEBUG(GPUJPEG_YUV, GPUJPEG_RGB, "Transformation");
         /*const double matrix[] = {
@@ -354,7 +355,7 @@ struct gpujpeg_color_transform<GPUJPEG_YUV, GPUJPEG_RGB> {
 template<>
 struct gpujpeg_color_transform<GPUJPEG_YCBCR_BT601, GPUJPEG_YCBCR_BT601_256LVLS> {
     /** YCbCr (ITU-R Recommendation BT.709) -> YCbCr (ITU-R Recommendation BT.601 with 256 levels) transform (8 bit) */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         gpujpeg_color_transform<GPUJPEG_YCBCR_BT601, GPUJPEG_RGB>::perform(c);
         gpujpeg_color_transform<GPUJPEG_RGB, GPUJPEG_YCBCR_BT601_256LVLS>::perform(c);
@@ -365,7 +366,7 @@ struct gpujpeg_color_transform<GPUJPEG_YCBCR_BT601, GPUJPEG_YCBCR_BT601_256LVLS>
 template<>
 struct gpujpeg_color_transform<GPUJPEG_YCBCR_BT601_256LVLS, GPUJPEG_YCBCR_BT601> {
     /** YCbCr (ITU-R Recommendation BT.601 with 256 levels) -> YCbCr (ITU-R Recommendation BT.709) transform (8 bit) */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         gpujpeg_color_transform<GPUJPEG_YCBCR_BT601_256LVLS, GPUJPEG_RGB>::perform(c);
         gpujpeg_color_transform<GPUJPEG_RGB, GPUJPEG_YCBCR_BT601>::perform(c);
@@ -376,7 +377,7 @@ struct gpujpeg_color_transform<GPUJPEG_YCBCR_BT601_256LVLS, GPUJPEG_YCBCR_BT601>
 template<>
 struct gpujpeg_color_transform<GPUJPEG_YCBCR_BT709, GPUJPEG_YCBCR_BT601_256LVLS> {
     /** YCbCr (ITU-R Recommendation BT.709) -> YCbCr (ITU-R Recommendation BT.601 with 256 levels) transform (8 bit) */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         gpujpeg_color_transform<GPUJPEG_YCBCR_BT709, GPUJPEG_RGB>::perform(c);
         gpujpeg_color_transform<GPUJPEG_RGB, GPUJPEG_YCBCR_BT601_256LVLS>::perform(c);
@@ -386,7 +387,7 @@ struct gpujpeg_color_transform<GPUJPEG_YCBCR_BT709, GPUJPEG_YCBCR_BT601_256LVLS>
 
 template<>
 struct gpujpeg_color_transform<GPUJPEG_YCBCR_BT601, GPUJPEG_YCBCR_BT709> {
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         gpujpeg_color_transform<GPUJPEG_YCBCR_BT601_256LVLS, GPUJPEG_RGB>::perform(c);
         gpujpeg_color_transform<GPUJPEG_RGB, GPUJPEG_YCBCR_BT709>::perform(c);
@@ -397,7 +398,7 @@ struct gpujpeg_color_transform<GPUJPEG_YCBCR_BT601, GPUJPEG_YCBCR_BT709> {
 template<>
 struct gpujpeg_color_transform<GPUJPEG_YCBCR_BT601_256LVLS, GPUJPEG_YCBCR_BT709> {
     /** YCbCr (ITU-R Recommendation BT.601 with 256 levels) -> YCbCr (ITU-R Recommendation BT.709) transform (8 bit) */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         gpujpeg_color_transform<GPUJPEG_YCBCR_BT601_256LVLS, GPUJPEG_RGB>::perform(c);
         gpujpeg_color_transform<GPUJPEG_RGB, GPUJPEG_YCBCR_BT709>::perform(c);
@@ -408,7 +409,7 @@ struct gpujpeg_color_transform<GPUJPEG_YCBCR_BT601_256LVLS, GPUJPEG_YCBCR_BT709>
 template<>
 struct gpujpeg_color_transform<GPUJPEG_YUV, GPUJPEG_YCBCR_BT601_256LVLS> {
     /** YUV -> YCbCr (ITU-R Recommendation BT.601 with 256 levels) transform (8 bit) */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         gpujpeg_color_transform<GPUJPEG_YUV, GPUJPEG_RGB>::perform(c);
         gpujpeg_color_transform<GPUJPEG_RGB, GPUJPEG_YCBCR_BT601_256LVLS>::perform(c);
@@ -419,7 +420,7 @@ struct gpujpeg_color_transform<GPUJPEG_YUV, GPUJPEG_YCBCR_BT601_256LVLS> {
 template<>
 struct gpujpeg_color_transform<GPUJPEG_YCBCR_BT601_256LVLS, GPUJPEG_YUV> {
     /** YCbCr (ITU-R Recommendation BT.601 with 256 levels) -> YUV transform (8 bit) */
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4 & c) {
         gpujpeg_color_transform<GPUJPEG_YCBCR_BT601_256LVLS, GPUJPEG_RGB>::perform(c);
         gpujpeg_color_transform<GPUJPEG_RGB, GPUJPEG_YUV>::perform(c);

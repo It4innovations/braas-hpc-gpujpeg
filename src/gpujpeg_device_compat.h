@@ -198,6 +198,7 @@
 
 // Math functions
 #define GPU_RINTF(x)                        rintf(x)
+#define GPU_ROUND(x)                        round(x)
 
 // Vector types
 #define GPU_MAKE_UINT4(x, y, z, w)          make_uint4(x, y, z, w)
@@ -335,9 +336,42 @@ namespace gpujpeg_sycl {
 
 // Math functions
 #define GPU_RINTF(x)                    sycl::rint(x)
+#define GPU_ROUND(x)                    sycl::round(x)
 
-// Vector types
+// Byte permutation function (CUDA __byte_perm equivalent)
+// Permutes 4 bytes from x and y according to selector s
+// Each nibble in s specifies which byte to select (0-3 from x, 4-7 from y-0x30)
+inline uint32_t __byte_perm(uint32_t x, uint32_t y, uint32_t s) {
+    uint32_t result = 0;
+    for (int i = 0; i < 4; i++) {
+        uint32_t selector = (s >> (i * 8)) & 0xF;
+        uint32_t byte;
+        if (selector <= 3) {
+            byte = (x >> (selector * 8)) & 0xFF;
+        } else {
+            byte = (y >> ((selector - 4) * 8)) & 0xFF;
+        }
+        result |= (byte << (i * 8));
+    }
+    return result;
+}
+
+// Vector types - SYCL uses sycl::vec instead of CUDA vector types
 #define GPU_MAKE_UINT4(x, y, z, w)      sycl::uint4(x, y, z, w)
+
+// Define CUDA-style vector types for compatibility
+struct uchar4 {
+    uint8_t x, y, z, w;
+    uchar4() = default;
+    uchar4(uint8_t x_, uint8_t y_, uint8_t z_, uint8_t w_) : x(x_), y(y_), z(z_), w(w_) {}
+};
+
+struct int4 {
+    int32_t x, y, z, w;
+    int4() = default;
+    int4(int32_t x_, int32_t y_, int32_t z_, int32_t w_) : x(x_), y(y_), z(z_), w(w_) {}
+};
+
 using uint4 = sycl::uint4;
 
 // Kernel launch configuration types

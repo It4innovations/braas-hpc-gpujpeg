@@ -42,6 +42,16 @@
 /** Value that means that sampling factor has dynamic value */
 #define GPUJPEG_DYNAMIC 16
 
+#ifdef GPUJPEG_USE_SYCL
+static inline uint32_t umulhi_u32(uint32_t a, uint32_t b) {
+    return static_cast<uint32_t>((static_cast<uint64_t>(a) * static_cast<uint64_t>(b)) >> 32);
+}
+
+static inline int32_t mulhi_s32(int32_t a, int32_t b) {
+    return static_cast<int32_t>((static_cast<int64_t>(a) * static_cast<int64_t>(b)) >> 32);
+}
+#endif
+
 /**
  * Prepares fixed divisor for dividing unsigned integers up to 2^31
  * with unsigned integers up to 2^31.
@@ -87,9 +97,13 @@ gpujpeg_const_div_prepare(const uint32_t d, uint32_t & pre_div_mul, uint32_t & p
 /**
  * Divides unsigned numerator (up to 2^31) by precomputed constant denominator.
  */
-__device__ static uint32_t
+GPU_DEVICE static uint32_t
 gpujpeg_const_div_divide(const uint32_t numerator, const uint32_t pre_div_mul, const uint32_t pre_div_shift) {
+#ifdef GPUJPEG_USE_SYCL
+    return pre_div_mul ? umulhi_u32(numerator, pre_div_mul) >> pre_div_shift : numerator;
+#else
     return pre_div_mul ? __umulhi(numerator, pre_div_mul) >> pre_div_shift : numerator;
+#endif
 }
 
 inline gpujpeg_sampling_factor_t
@@ -109,24 +123,24 @@ gpujpeg_preprocessor_make_sampling_factor_i(int comp_count, int numerator_h, int
            coder->component[3].sampling_factor.horizontal, coder->component[3].sampling_factor.vertical)
 
 template<enum gpujpeg_pixel_format>
-inline __device__ int unit_size() { return 1; }
+inline GPU_DEVICE int unit_size() { return 1; }
 
 template<>
-inline __device__ int unit_size<GPUJPEG_444_U8_P012>() { return 3; }
+inline GPU_DEVICE int unit_size<GPUJPEG_444_U8_P012>() { return 3; }
 
 template<>
-inline __device__ int unit_size<GPUJPEG_4444_U8_P0123>() { return 4; }
+inline GPU_DEVICE int unit_size<GPUJPEG_4444_U8_P0123>() { return 4; }
 
 template<>
-inline __device__ int unit_size<GPUJPEG_422_U8_P1020>() { return 2; }
+inline GPU_DEVICE int unit_size<GPUJPEG_422_U8_P1020>() { return 2; }
 
 template <enum gpujpeg_pixel_format pixel_format>
-inline __device__ void
+inline GPU_DEVICE void
 gpujpeg_comp_to_raw_store(uint8_t* d_data_raw, int& image_width, int& image_height, int& image_position, int& x, int& y,
                           uchar4& r);
 
 template <>
-inline __device__ void
+inline GPU_DEVICE void
 gpujpeg_comp_to_raw_store<GPUJPEG_U8>(uint8_t* d_data_raw, int& image_width, int& image_height, int& image_position,
                                       int& x, int& y, uchar4& r)
 {
@@ -134,7 +148,7 @@ gpujpeg_comp_to_raw_store<GPUJPEG_U8>(uint8_t* d_data_raw, int& image_width, int
 }
 
 template <>
-inline __device__ void
+inline GPU_DEVICE void
 gpujpeg_comp_to_raw_store<GPUJPEG_444_U8_P012>(uint8_t* d_data_raw, int& image_width, int& image_height, int& offset,
                                                int& x, int& y, uchar4& r)
 {
@@ -144,7 +158,7 @@ gpujpeg_comp_to_raw_store<GPUJPEG_444_U8_P012>(uint8_t* d_data_raw, int& image_w
 }
 
 template <>
-inline __device__ void
+inline GPU_DEVICE void
 gpujpeg_comp_to_raw_store<GPUJPEG_4444_U8_P0123>(uint8_t* d_data_raw, int& image_width, int& image_height, int& offset,
                                                  int& x, int& y, uchar4& r)
 {
@@ -155,7 +169,7 @@ gpujpeg_comp_to_raw_store<GPUJPEG_4444_U8_P0123>(uint8_t* d_data_raw, int& image
 }
 
 template <>
-inline __device__ void
+inline GPU_DEVICE void
 gpujpeg_comp_to_raw_store<GPUJPEG_444_U8_P0P1P2>(uint8_t* d_data_raw, int& image_width, int& image_height,
                                                  int& image_position, int& x, int& y, uchar4& r)
 {
@@ -165,7 +179,7 @@ gpujpeg_comp_to_raw_store<GPUJPEG_444_U8_P0P1P2>(uint8_t* d_data_raw, int& image
 }
 
 template <>
-inline __device__ void
+inline GPU_DEVICE void
 gpujpeg_comp_to_raw_store<GPUJPEG_422_U8_P0P1P2>(uint8_t* d_data_raw, int& image_width, int& image_height,
                                                  int& image_position, int& x, int& y, uchar4& r)
 {
@@ -177,7 +191,7 @@ gpujpeg_comp_to_raw_store<GPUJPEG_422_U8_P0P1P2>(uint8_t* d_data_raw, int& image
 }
 
 template <>
-inline __device__ void
+inline GPU_DEVICE void
 gpujpeg_comp_to_raw_store<GPUJPEG_422_U8_P1020>(uint8_t* d_data_raw, int& image_width, int& image_height, int& offset,
                                                 int& x, int& y, uchar4& r)
 {
@@ -189,7 +203,7 @@ gpujpeg_comp_to_raw_store<GPUJPEG_422_U8_P1020>(uint8_t* d_data_raw, int& image_
 }
 
 template <>
-inline __device__ void
+inline GPU_DEVICE void
 gpujpeg_comp_to_raw_store<GPUJPEG_420_U8_P0P1P2>(uint8_t* d_data_raw, int& image_width, int& image_height,
                                                  int& image_position, int& x, int& y, uchar4& r)
 {
