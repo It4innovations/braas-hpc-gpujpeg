@@ -39,6 +39,44 @@
 
 #include <cuda_runtime.h>
 
+// Kernel function qualifiers
+#define GPU_DEVICE                          __device__
+#define GPU_HOST                            __host__
+#define GPU_GLOBAL                          __global__
+#define GPU_SHARED                          __shared__
+#define GPU_CONSTANT                        __constant__
+
+// CUDA doesn't need item parameter
+#define GPU_KERNEL_ITEM_PARAM               /* empty */
+#define GPU_KERNEL_ITEM_ARG                 /* empty */
+#define GPU_ITEM_COMMA                      /* empty */
+
+// Built-in variables
+#define GPU_THREAD_IDX_X                    threadIdx.x
+#define GPU_THREAD_IDX_Y                    threadIdx.y
+#define GPU_THREAD_IDX_Z                    threadIdx.z
+#define GPU_BLOCK_IDX_X                     blockIdx.x
+#define GPU_BLOCK_IDX_Y                     blockIdx.y
+#define GPU_BLOCK_IDX_Z                     blockIdx.z
+#define GPU_BLOCK_DIM_X                     blockDim.x
+#define GPU_BLOCK_DIM_Y                     blockDim.y
+#define GPU_BLOCK_DIM_Z                     blockDim.z
+#define GPU_GRID_DIM_X                      gridDim.x
+#define GPU_GRID_DIM_Y                      gridDim.y
+#define GPU_GRID_DIM_Z                      gridDim.z
+
+// Synchronization
+#define GPU_SYNCTHREADS()                   __syncthreads()
+
+// Atomic operations
+#define GPU_ATOMIC_ADD(ptr, val)            atomicAdd(ptr, val)
+
+// Math functions
+#define GPU_RINTF(x)                        rintf(x)
+
+// Vector types
+#define GPU_MAKE_UINT4(x, y, z, w)          make_uint4(x, y, z, w)
+
 // Type definitions
 #define gpuStream_t                         cudaStream_t
 #define gpuError_t                          cudaError_t
@@ -122,7 +160,50 @@
 // Use C-compatible HIP API header for C files
 #ifdef __cplusplus
     #include <hip/hip_runtime.h>
-    // Type definitions
+#else
+    #include <hip/hip_runtime_api.h>
+#endif
+
+// Kernel function qualifiers
+#define GPU_DEVICE                          __device__
+#define GPU_HOST                            __host__
+#define GPU_GLOBAL                          __global__
+#define GPU_SHARED                          __shared__
+#define GPU_CONSTANT                        __constant__
+
+// HIP doesn't need item parameter
+#define GPU_KERNEL_ITEM_PARAM               /* empty */
+#define GPU_KERNEL_ITEM_ARG                 /* empty */
+#define GPU_ITEM_COMMA                      /* empty */
+
+// Built-in variables
+#define GPU_THREAD_IDX_X                    hipThreadIdx_x
+#define GPU_THREAD_IDX_Y                    hipThreadIdx_y
+#define GPU_THREAD_IDX_Z                    hipThreadIdx_z
+#define GPU_BLOCK_IDX_X                     hipBlockIdx_x
+#define GPU_BLOCK_IDX_Y                     hipBlockIdx_y
+#define GPU_BLOCK_IDX_Z                     hipBlockIdx_z
+#define GPU_BLOCK_DIM_X                     hipBlockDim_x
+#define GPU_BLOCK_DIM_Y                     hipBlockDim_y
+#define GPU_BLOCK_DIM_Z                     hipBlockDim_z
+#define GPU_GRID_DIM_X                      hipGridDim_x
+#define GPU_GRID_DIM_Y                      hipGridDim_y
+#define GPU_GRID_DIM_Z                      hipGridDim_z
+
+// Synchronization
+#define GPU_SYNCTHREADS()                   __syncthreads()
+
+// Atomic operations
+#define GPU_ATOMIC_ADD(ptr, val)            atomicAdd(ptr, val)
+
+// Math functions
+#define GPU_RINTF(x)                        rintf(x)
+
+// Vector types
+#define GPU_MAKE_UINT4(x, y, z, w)          make_uint4(x, y, z, w)
+
+// Type definitions
+#ifdef __cplusplus
     #define gpuStream_t                         hipStream_t
     #define gpuError_t                          hipError_t
     #define gpuEvent_t                          hipEvent_t
@@ -218,6 +299,55 @@
 namespace gpujpeg_sycl {
     extern sycl::queue* default_queue;
 }
+
+// Kernel function qualifiers
+#define GPU_DEVICE                          /* empty */
+#define GPU_HOST                            /* empty */
+#define GPU_GLOBAL                          /* empty */
+#define GPU_SHARED                          /* empty */
+#define GPU_CONSTANT                        /* empty */
+
+// SYCL requires item parameter in kernels
+#define GPU_KERNEL_ITEM_PARAM               sycl::nd_item<3> item
+#define GPU_KERNEL_ITEM_ARG                 item
+#define GPU_ITEM_COMMA                      ,
+
+// Built-in variables - SYCL uses nd_item parameter
+// Note: For SYCL kernels, 'item' parameter must be passed to kernel
+#define GPU_THREAD_IDX_X                (item.get_local_id(2))
+#define GPU_THREAD_IDX_Y                (item.get_local_id(1))
+#define GPU_THREAD_IDX_Z                (item.get_local_id(0))
+#define GPU_BLOCK_IDX_X                 (item.get_group(2))
+#define GPU_BLOCK_IDX_Y                 (item.get_group(1))
+#define GPU_BLOCK_IDX_Z                 (item.get_group(0))
+#define GPU_BLOCK_DIM_X                 (item.get_local_range(2))
+#define GPU_BLOCK_DIM_Y                 (item.get_local_range(1))
+#define GPU_BLOCK_DIM_Z                 (item.get_local_range(0))
+#define GPU_GRID_DIM_X                  (item.get_group_range(2))
+#define GPU_GRID_DIM_Y                  (item.get_group_range(1))
+#define GPU_GRID_DIM_Z                  (item.get_group_range(0))
+
+// Synchronization
+#define GPU_SYNCTHREADS()               item.barrier()
+
+// Atomic operations
+#define GPU_ATOMIC_ADD(ptr, val)            sycl::atomic_ref<unsigned int, sycl::memory_order::relaxed, sycl::memory_scope::device>(*ptr).fetch_add(val)
+
+// Math functions
+#define GPU_RINTF(x)                    sycl::rint(x)
+
+// Vector types
+#define GPU_MAKE_UINT4(x, y, z, w)      sycl::uint4(x, y, z, w)
+using uint4 = sycl::uint4;
+
+// Kernel launch configuration types
+struct dim3 {
+    unsigned int x, y, z;
+    dim3(unsigned int x_ = 1, unsigned int y_ = 1, unsigned int z_ = 1) : x(x_), y(y_), z(z_) {}
+};
+
+// Item type for SYCL kernels
+using sycl_item_t = sycl::nd_item<3>;
 
 // Type definitions
 typedef sycl::queue* gpuStream_t;
@@ -322,13 +452,36 @@ const char* gpuGetErrorString(gpuError_t error);
 #define GPUART_VERSION                      0
 #endif
 
-// Kernel launch - SYCL requires submit syntax, this is a placeholder
-#define GPU_KERNEL_LAUNCH(kernel, grid, block, smem, stream, ...) \
-    /* SYCL kernel launch would need significant refactoring */
-
 #ifdef __cplusplus
+} // extern "C"
+
+// Kernel launch - SYCL uses queue.submit with parallel_for
+// Helper function for launching SYCL kernels
+template<typename KernelFunc>
+void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t smem, KernelFunc&& kernel) {
+    q->submit([&](sycl::handler& cgh) {
+        // Allocate local memory if needed
+        if (smem > 0) {
+            sycl::local_accessor<uint8_t, 1> local_mem(smem, cgh);
+        }
+        
+        sycl::range<3> global_range(grid.z * block.z, grid.y * block.y, grid.x * block.x);
+        sycl::range<3> local_range(block.z, block.y, block.x);
+        
+        cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                        [=](sycl::nd_item<3> item) {
+            kernel(item);
+        });
+    });
 }
-#endif
+
+// Macro for kernel launch
+#define GPU_KERNEL_LAUNCH(kernel, grid, block, smem, stream, ...) \
+    sycl_launch_kernel(stream, grid, block, smem, \
+        [=](sycl::nd_item<3> item) { \
+            kernel(item, __VA_ARGS__); \
+        })
+#endif // __cplusplus
 
 #endif // GPUJPEG_USE_SYCL
 

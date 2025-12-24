@@ -206,6 +206,11 @@ elseif(GPU_BACKEND STREQUAL "SYCL")
     # SYCL compatibility layer implementation
     file(GLOB GPUJPEG_GPU_SOURCES 
         src/gpujpeg_device_compat_sycl.cpp
+        src/gpujpeg_dct_gpu.cpp
+        src/gpujpeg_huffman_gpu_decoder.cpp
+        src/gpujpeg_huffman_gpu_encoder.cpp
+        src/gpujpeg_postprocessor.cpp
+        src/gpujpeg_preprocessor.cpp
     )
     # Note: SYCL requires kernel rewrites, .cu files won't work directly
     # You would need to add SYCL kernel implementations here

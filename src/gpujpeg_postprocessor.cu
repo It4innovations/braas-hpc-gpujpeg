@@ -39,6 +39,7 @@
 #include "gpujpeg_preprocessor.h" // common structs
 #include "gpujpeg_preprocessor_common.cuh" // utils
 #include "gpujpeg_util.h"
+#include "gpujpeg_device_compat.h"
 
 /**
  * Store value to component data buffer in specified position by buffer size and subsampling
@@ -54,7 +55,7 @@ template<
 >
 struct gpujpeg_preprocessor_comp_to_raw_load_comp
 {
-    static __device__ void
+    static GPU_DEVICE void
     perform(uint8_t & value, int position_x, int position_y, struct gpujpeg_preprocessor_data_component & comp)
     {
         uint8_t samp_factor_h = s_samp_factor_h;
@@ -79,7 +80,7 @@ struct gpujpeg_preprocessor_comp_to_raw_load_comp
 template<>
 struct gpujpeg_preprocessor_comp_to_raw_load_comp<1, 1>
 {
-    static __device__ void
+    static GPU_DEVICE void
     perform(uint8_t & value, int position_x, int position_y, struct gpujpeg_preprocessor_data_component & comp)
     {
         int data_position = position_y * comp.data_width + position_x;
@@ -90,7 +91,7 @@ struct gpujpeg_preprocessor_comp_to_raw_load_comp<1, 1>
 template <>
 struct gpujpeg_preprocessor_comp_to_raw_load_comp<0, 0>
 {
-    static __device__ void
+    static GPU_DEVICE void
     perform(uint8_t& value, int position_x, int position_y, struct gpujpeg_preprocessor_data_component& comp)
     {
     }
@@ -104,7 +105,7 @@ template<
 >
 struct gpujpeg_preprocessor_comp_to_raw_load
 {
-    static __device__ void perform(uchar4 & value, int position_x, int position_y, struct gpujpeg_preprocessor_data & data) {
+    static GPU_DEVICE void perform(uchar4 & value, int position_x, int position_y, struct gpujpeg_preprocessor_data & data) {
         gpujpeg_preprocessor_comp_to_raw_load_comp<s_comp1_samp_factor_h, s_comp1_samp_factor_v>::perform(value.x, position_x, position_y, data.comp[0]);
         gpujpeg_preprocessor_comp_to_raw_load_comp<s_comp2_samp_factor_h, s_comp2_samp_factor_v>::perform(value.y, position_x, position_y, data.comp[1]);
         gpujpeg_preprocessor_comp_to_raw_load_comp<s_comp3_samp_factor_h, s_comp3_samp_factor_v>::perform(value.z, position_x, position_y, data.comp[2]);
@@ -115,7 +116,7 @@ struct gpujpeg_preprocessor_comp_to_raw_load
 /// set alpha that may not be included in input data but may be read by the CS conv
 template <enum gpujpeg_pixel_format pixel_format>
 struct pre_load {
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4& value)
     {
         if ( pixel_format == GPUJPEG_4444_U8_P0123 ) {
@@ -128,12 +129,12 @@ struct pre_load {
 template <bool in_is_rgb, uint8_t s_comp2_samp_factor_h>
 struct post_load
 {
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4& value, struct gpujpeg_preprocessor_data data)
     {
     }
 };
-static __device__ void
+static GPU_DEVICE void
 fill_ch_2_3(uchar4& value, bool is_rgb)
 {
     if ( is_rgb ) {
@@ -147,7 +148,7 @@ fill_ch_2_3(uchar4& value, bool is_rgb)
 template <bool in_is_rgb>
 struct post_load<in_is_rgb, 0>
 {
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4& value, struct gpujpeg_preprocessor_data data)
     {
         fill_ch_2_3(value, in_is_rgb);
@@ -157,7 +158,7 @@ struct post_load<in_is_rgb, 0>
 template <bool in_is_rgb>
 struct post_load<in_is_rgb, GPUJPEG_DYNAMIC>
 {
-    static __device__ void
+    static GPU_DEVICE void
     perform(uchar4& value, struct gpujpeg_preprocessor_data data)
     {
         if ( data.comp[1].sampling_factor.horizontal != 0 ) {
@@ -189,12 +190,12 @@ template<
     uint8_t s_comp3_samp_factor_h, uint8_t s_comp3_samp_factor_v,
     uint8_t s_comp4_samp_factor_h, uint8_t s_comp4_samp_factor_v
 >
-__global__ void
-gpujpeg_preprocessor_comp_to_raw_kernel(struct gpujpeg_preprocessor_data data, uint8_t* d_data_raw,
+GPU_GLOBAL void
+gpujpeg_preprocessor_comp_to_raw_kernel(GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA struct gpujpeg_preprocessor_data data, uint8_t* d_data_raw,
                                         int image_width_padding, int image_width, int image_height)
 {
-    int x  = threadIdx.x;
-    int gX = (blockIdx.y * gridDim.x + blockIdx.x) * blockDim.x;
+    int x  = GPU_THREAD_IDX_X;
+    int gX = (GPU_BLOCK_IDX_Y * GPU_GRID_DIM_X + GPU_BLOCK_IDX_X) * GPU_BLOCK_DIM_X;
     int image_position = gX + x;
     if ( image_position >= (image_width * image_height) )
         return;
@@ -511,7 +512,7 @@ gpujpeg_postprocessor_decode(struct gpujpeg_coder* coder, gpuStream_t stream)
     }
 
     // Run kernel
-    kernel<<<grid, threads, 0, stream>>>(
+    GPU_KERNEL_LAUNCH(kernel, grid, threads, 0, stream,
         coder->preprocessor.data,
         coder->d_data_raw,
         coder->param_image.width_padding,

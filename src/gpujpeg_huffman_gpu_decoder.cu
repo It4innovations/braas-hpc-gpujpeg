@@ -30,6 +30,7 @@
 
 #include "gpujpeg_huffman_gpu_decoder.h"
 #include "gpujpeg_util.h"
+#include "gpujpeg_device_compat.h"
 
 /**
  * Entry of pre-built Huffman fast-decoding table.
@@ -131,7 +132,7 @@ __constant__ int gpujpeg_huffman_gpu_decoder_order_natural[GPUJPEG_ORDER_NATURAL
 /**
  * Loads at least specified number of bits into the register
  */
-__device__ inline void
+GPU_DEVICE inline void
 gpujpeg_huffman_gpu_decoder_load_bits(
                 const unsigned int required_bit_count, unsigned int & r_bit,
                 unsigned int & r_bit_count, uint4 * const s_byte, unsigned int & s_byte_idx
@@ -161,7 +162,7 @@ gpujpeg_huffman_gpu_decoder_load_bits(
  * @param data_size
  * @return bits
  */
-__device__ inline unsigned int
+GPU_DEVICE inline unsigned int
 gpujpeg_huffman_gpu_decoder_get_bits(
                 const unsigned int nbits, unsigned int & r_bit, unsigned int & r_bit_count, 
                 uint4 * const s_byte, unsigned int & s_byte_idx)
@@ -179,7 +180,7 @@ gpujpeg_huffman_gpu_decoder_get_bits(
 /**
  * Gets bits without removing them from the buffer.
  */
-__device__ inline unsigned int
+GPU_DEVICE inline unsigned int
 gpujpeg_huffman_gpu_decoder_peek_bits(
                 const unsigned int nbits, unsigned int & r_bit, unsigned int & r_bit_count,
                 uint4 * const s_byte, unsigned int & s_byte_idx)
@@ -194,7 +195,7 @@ gpujpeg_huffman_gpu_decoder_peek_bits(
 /**
  * Removes some bits from the buffer (assumes that they are there)
  */
-__device__ inline void
+GPU_DEVICE inline void
 gpujpeg_huffman_gpu_decoder_discard_bits(const unsigned int nb, unsigned int, unsigned int & r_bit_count) {
     r_bit_count -= nb;
 }
@@ -212,7 +213,7 @@ gpujpeg_huffman_gpu_decoder_discard_bits(const unsigned int nb, unsigned int, un
  * @param data_size
  * @return int
  */
-__device__ inline int
+GPU_DEVICE inline int
 gpujpeg_huffman_gpu_decoder_decode_special_decode(
                 const struct gpujpeg_table_huffman_decoder* const table, int min_bits, unsigned int & r_bit,
                 unsigned int & r_bit_count, uint4 * const s_byte, unsigned int & s_byte_idx)
@@ -242,7 +243,7 @@ gpujpeg_huffman_gpu_decoder_decode_special_decode(
 /**
  * To find dc or ac value according to code and its bit length s
  */
-__device__ inline int
+GPU_DEVICE inline int
 gpujpeg_huffman_gpu_decoder_value_from_category(int nbits, int code)
 {
     // TODO: try to replace with __constant__ table lookup
@@ -283,7 +284,7 @@ gpujpeg_huffman_gpu_decoder_value_from_category(int nbits, int code)
  * @param data_size
  * @return int
  */
-__device__ inline int
+GPU_DEVICE inline int
 gpujpeg_huffman_gpu_decoder_get_coefficient(struct gpujpeg_huffman_gpu_decoder huffman_gpu_decoder,
                 unsigned int & r_bit, unsigned int & r_bit_count, uint4* const s_byte,
                 unsigned int & s_byte_idx, const unsigned int table_offset, unsigned int & coefficient_idx)
@@ -320,7 +321,7 @@ gpujpeg_huffman_gpu_decoder_get_coefficient(struct gpujpeg_huffman_gpu_decoder h
  *
  * @return 0 if succeeds, otherwise nonzero
  */
-__device__ inline int
+GPU_DEVICE inline int
 gpujpeg_huffman_gpu_decoder_decode_block(
     struct gpujpeg_huffman_gpu_decoder huffman_gpu_decoder,
     int & dc, int16_t* const data_output, const unsigned int dc_table_offset, const unsigned int ac_table_offset,
@@ -388,13 +389,14 @@ gpujpeg_huffman_gpu_decoder_decode_block(
  * @return void
  */
 template <bool SINGLE_COMP, int THREADS_PER_TBLOCK>
-__global__ void
-#if __CUDA_ARCH__ < 200
+GPU_GLOBAL void
+#if defined(__CUDACC__) && __CUDA_ARCH__ < 200
 __launch_bounds__(THREADS_PER_TBLOCK, 2)
-#else
+#elif defined(__CUDACC__)
 __launch_bounds__(THREADS_PER_TBLOCK, 4)
 #endif
 gpujpeg_huffman_decoder_decode_kernel(
+    GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA
     struct gpujpeg_huffman_gpu_decoder huffman_gpu_decoder,
     struct gpujpeg_component* d_component,
     struct gpujpeg_segment* d_segment,
@@ -404,15 +406,15 @@ gpujpeg_huffman_decoder_decode_kernel(
     const uint64_t* d_block_list,
     int16_t* d_data_quantized
 ) {
-    int segment_index = blockIdx.x * THREADS_PER_TBLOCK + threadIdx.x;
+    int segment_index = GPU_BLOCK_IDX_X * THREADS_PER_TBLOCK + GPU_THREAD_IDX_X;
     if ( segment_index >= segment_count )
         return;
     
     struct gpujpeg_segment* segment = &d_segment[segment_index];
     
     // Byte buffers in shared memory
-    __shared__ uint4 s_byte_all[2 * THREADS_PER_TBLOCK]; // 32 bytes per thread
-    uint4 * const s_byte = s_byte_all + 2 * threadIdx.x;
+    GPU_SHARED uint4 s_byte_all[2 * THREADS_PER_TBLOCK]; // 32 bytes per thread
+    uint4 * const s_byte = s_byte_all + 2 * GPU_THREAD_IDX_X;
     
     // Last DC coefficient values   TODO: try to move into shared memory
     int dc[GPUJPEG_MAX_COMPONENT_COUNT];
@@ -432,7 +434,7 @@ gpujpeg_huffman_decoder_decode_kernel(
     s_byte[0] = d_byte[0];
     s_byte[1] = d_byte[1];
     d_byte += 2;
-    d_byte_chunk_count = max(d_byte_chunk_count, 2) - 2;
+    d_byte_chunk_count = (d_byte_chunk_count > 2 ? d_byte_chunk_count : 2) - 2;
     unsigned int s_byte_idx = d_byte_begin_idx - d_byte_begin_idx_aligned;
     
     // bits loaded into the register and their count
@@ -542,7 +544,7 @@ gpujpeg_huffman_decoder_decode_kernel(
  * @param d_table_src  source (slow-decoding) table pointer
  * @param d_table_dest  destination (fast-decoding) table pointer
  */
-__device__ void
+GPU_DEVICE void
 gpujpeg_huffman_gpu_decoder_table_setup(
     struct gpujpeg_huffman_gpu_decoder huffman_gpu_decoder,
     const int bits, 
@@ -574,7 +576,7 @@ gpujpeg_huffman_gpu_decoder_table_setup(
     // (special category #0 contains all invalid codes and special end-of-block code -- all of those codes 
     // should terminate block decoding => use 64 run-length zeros and 0 value bits for such symbols)
     const int value_nbits = 0xF & category_id;
-    const int rle_zero_count = category_id ? min(1 + (category_id >> 4), 64) : 64;
+    const int rle_zero_count = category_id ? (1 + (category_id >> 4) < 64 ? 1 + (category_id >> 4) : 64) : 64;
     
     // save all the info into the right place in the destination table
     const int packed_info = (rle_zero_count << 9) + (code_nbits << 4) + value_nbits;
@@ -593,8 +595,9 @@ gpujpeg_huffman_gpu_decoder_table_setup(
  * Huffman decoder table setup kernel
  * (Based on the original table, this kernel prepares another table, which is more suitable for fast decoding.)
  */
-__global__ void
+GPU_GLOBAL void
 gpujpeg_huffman_decoder_table_kernel(
+                GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA
                 struct gpujpeg_huffman_gpu_decoder huffman_gpu_decoder,
                 const struct gpujpeg_table_huffman_decoder* const d_table_y_dc,
                 const struct gpujpeg_table_huffman_decoder* const d_table_y_ac,
@@ -602,7 +605,7 @@ gpujpeg_huffman_decoder_table_kernel(
                 const struct gpujpeg_table_huffman_decoder* const d_table_cbcr_ac
 ) {
     // Each thread uses all 4 Huffman tables to "decode" one symbol from its unique 16bits.
-    const int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    const int idx = GPU_THREAD_IDX_X + GPU_BLOCK_IDX_X * GPU_BLOCK_DIM_X;
     gpujpeg_huffman_gpu_decoder_table_setup(huffman_gpu_decoder, idx, d_table_y_dc, 0);
     gpujpeg_huffman_gpu_decoder_table_setup(huffman_gpu_decoder, idx, d_table_y_ac, 1);
     gpujpeg_huffman_gpu_decoder_table_setup(huffman_gpu_decoder, idx, d_table_cbcr_dc, 2);
@@ -682,11 +685,13 @@ gpujpeg_huffman_gpu_decoder_decode(struct gpujpeg_decoder* decoder)
     
     // Configure more Shared memory for both kernels
     (void)gpuFuncSetCacheConfig((const void*)gpujpeg_huffman_decoder_table_kernel, gpuFuncCachePreferShared);
-    (void)gpuFuncSetCacheConfig((const void*)gpujpeg_huffman_decoder_decode_kernel<true, THREADS_PER_TBLOCK>, gpuFuncCachePreferShared);
-    (void)gpuFuncSetCacheConfig((const void*)gpujpeg_huffman_decoder_decode_kernel<false, THREADS_PER_TBLOCK>, gpuFuncCachePreferShared);
+#if !defined(SYCL_DEVICE_ONLY)
+    (void)gpuFuncSetCacheConfig((const void*)(gpujpeg_huffman_decoder_decode_kernel<true, THREADS_PER_TBLOCK>), gpuFuncCachePreferShared);
+    (void)gpuFuncSetCacheConfig((const void*)(gpujpeg_huffman_decoder_decode_kernel<false, THREADS_PER_TBLOCK>), gpuFuncCachePreferShared);
+#endif
     
     // Setup GPU tables (one thread for each of 65536 entries)
-    gpujpeg_huffman_decoder_table_kernel<<<256, 256, 0, coder->stream>>>(
+    GPU_KERNEL_LAUNCH(gpujpeg_huffman_decoder_table_kernel, dim3(256), dim3(256), 0, coder->stream,
         *decoder->huffman_gpu_decoder,
         decoder->d_table_huffman[GPUJPEG_COMPONENT_LUMINANCE][GPUJPEG_HUFFMAN_DC],
         decoder->d_table_huffman[GPUJPEG_COMPONENT_LUMINANCE][GPUJPEG_HUFFMAN_AC],
@@ -721,7 +726,7 @@ gpujpeg_huffman_gpu_decoder_decode(struct gpujpeg_decoder* decoder)
     dim3 thread(THREADS_PER_TBLOCK);
     dim3 grid(gpujpeg_div_and_round_up(decoder->segment_count, THREADS_PER_TBLOCK));
     if(comp_count == 1) {
-        gpujpeg_huffman_decoder_decode_kernel<true, THREADS_PER_TBLOCK><<<grid, thread, 0, coder->stream>>>(
+        GPU_KERNEL_LAUNCH((gpujpeg_huffman_decoder_decode_kernel<true, THREADS_PER_TBLOCK>), grid, thread, 0, coder->stream,
             *decoder->huffman_gpu_decoder,
             coder->d_component, 
             coder->d_segment, 
@@ -732,7 +737,7 @@ gpujpeg_huffman_gpu_decoder_decode(struct gpujpeg_decoder* decoder)
             coder->d_data_quantized
         );
     } else {
-        gpujpeg_huffman_decoder_decode_kernel<false, THREADS_PER_TBLOCK><<<grid, thread, 0, coder->stream>>>(
+        GPU_KERNEL_LAUNCH((gpujpeg_huffman_decoder_decode_kernel<false, THREADS_PER_TBLOCK>), grid, thread, 0, coder->stream,
             *decoder->huffman_gpu_decoder,
             coder->d_component, 
             coder->d_segment, 
