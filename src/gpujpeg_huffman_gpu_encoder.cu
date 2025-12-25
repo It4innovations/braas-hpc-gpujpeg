@@ -97,7 +97,7 @@ gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel(GPU_KERNEL_ITEM_PARA
 }
 #endif // !defined(GPUJPEG_USE_SYCL)
 
-#if defined(__CUDACC__) && __CUDA_ARCH__ >= 200 || defined(__HIP_DEVICE_COMPILE__) || defined(SYCL_DEVICE_ONLY)
+#if defined(__CUDACC__) && __CUDA_ARCH__ >= 200 //|| defined(__HIP_DEVICE_COMPILE__) || defined(SYCL_DEVICE_ONLY)
 /**
  * Adds up to 32 bits at once into ouptut buffer, applying byte stuffing.
  * Codeword value must be aligned to left (most significant bits). (CC >= 2.0)
@@ -315,7 +315,7 @@ gpujpeg_huffman_encoder_encode_kernel_warp(
     const int comp_count,
     unsigned int * d_gpujpeg_huffman_output_byte_count
 ) {
-#if defined(__CUDACC__) && __CUDA_ARCH__ >= 200 || defined(__HIP_DEVICE_COMPILE__) || defined(SYCL_DEVICE_ONLY)
+#if defined(__CUDACC__) && __CUDA_ARCH__ >= 200 //|| defined(__HIP_DEVICE_COMPILE__) || defined(SYCL_DEVICE_ONLY)
     int warpidx = GPU_THREAD_IDX_X >> 5;
     int tid = GPU_THREAD_IDX_X & 31;
 
@@ -425,7 +425,7 @@ gpujpeg_huffman_encoder_serialization_kernel(
     const uint8_t* const d_src,
     uint8_t* const d_dest
 ) {
-#if defined(__CUDACC__) && __CUDA_ARCH__ >= 200 || defined(__HIP_DEVICE_COMPILE__) || defined(SYCL_DEVICE_ONLY)
+#if defined(__CUDACC__) && __CUDA_ARCH__ >= 200 //|| defined(__HIP_DEVICE_COMPILE__) || defined(SYCL_DEVICE_ONLY)
     // Temp buffer for all threads of the threadblock
     GPU_SHARED uint4 s_temp_all[2 * SERIALIZATION_THREADS_PER_TBLOCK];
 
