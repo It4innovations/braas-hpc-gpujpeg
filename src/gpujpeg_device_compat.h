@@ -308,7 +308,15 @@ namespace gpujpeg_sycl {
 }
 
 #ifndef half
-typedef sycl::half half;
+#define half sycl::half
+#endif
+
+#ifndef __float2half
+#define __float2half(f) static_cast<half>(f)
+#endif
+
+#ifndef __half2float
+#define __half2float(h) static_cast<float>(h)
 #endif
 
 // Kernel function qualifiers

@@ -519,7 +519,7 @@ GPUJPEG_API const char *
 gpujpeg_header_type_get_name(enum gpujpeg_header_type header_type);
 
 GPUJPEG_API void
-gpujpeg_print_pixel_formats();
+gpujpeg_print_pixel_formats(void);
 
 /** Returns color space by string name */
 GPUJPEG_API enum gpujpeg_color_space

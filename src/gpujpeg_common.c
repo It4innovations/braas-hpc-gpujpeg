@@ -529,10 +529,13 @@ gpujpeg_coder_init(struct gpujpeg_coder * coder)
     gpujpeg_cuda_check_error("Device info getting", return -1);
     coder->cuda_cc_major = device_properties.major;
     coder->cuda_cc_minor = device_properties.minor;
+
+# if 0    
     if (device_properties.major < 2) {
         fprintf(stderr, "GPUJPEG coder is currently broken on cards with cc < 2.0\n");
         return -1;
     }
+#endif
 
     // Initialize coder for no image
     coder->param.quality = -1;
@@ -1928,7 +1931,7 @@ const char* gj_fg_red = "";
 const char* gj_fg_yellow = "";
 const char* gj_term_reset = "";
 void
-gpujpeg_init_term_colors()
+gpujpeg_init_term_colors(void)
 {
     static bool init;
     if ( init ) {

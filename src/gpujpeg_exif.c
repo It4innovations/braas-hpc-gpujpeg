@@ -469,7 +469,7 @@ get_numeric_tag_type(char** endptr, long* tag_id, enum exif_tag_type* type)
 }
 
 static void
-usage()
+usage(void)
 {
     printf("Exif value syntax:\n"
            "\t" GPUJPEG_ENC_OPT_EXIF_TAG "=<ID>:<type>=<value>\n"

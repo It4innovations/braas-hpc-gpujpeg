@@ -136,8 +136,8 @@ extern const char *gj_term_reset;
             (void)fprintf(stderr, "%s[GPUJPEG] [Warning] " fmt "%s", gj_fg_yellow __VA_OPT__(, ) __VA_ARGS__,          \
                           gj_term_reset)
 #else
-#define ERROR_MSG(...) (void)fprintf(stderr, "[GPUJPEG] [Error] " __VA_ARGS__)
-#define WARN_MSG(...) (void)fprintf(stderr, "[GPUJPEG] [Warning] " __VA_ARGS__)
+#define ERROR_MSG(fmt, ...) (void)fprintf(stderr, "[GPUJPEG] [Error] " fmt, ##__VA_ARGS__)
+#define WARN_MSG(fmt, ...) (void)fprintf(stderr, "[GPUJPEG] [Warning] " fmt, ##__VA_ARGS__)
 #endif
 #define VERBOSE_MSG(log_level, ...)                                                                                    \
     if ( log_level >= GPUJPEG_LL_VERBOSE )                                                                             \
@@ -550,7 +550,7 @@ gpujpeg_make_sampling_factor(int comp_count, int comp1_h, int comp1_v, int comp2
 void*
 gpujpeg_cuda_malloc_host(size_t size);
 void
-gpujpeg_init_term_colors();
+gpujpeg_init_term_colors(void);
 
 int
 gpujpeg_opt_set_channel_remap(struct gpujpeg_coder* coder, const char* val, const char* optname);

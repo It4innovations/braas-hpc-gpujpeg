@@ -338,7 +338,7 @@ int y4m_save_delegate(const char *filename, const struct gpujpeg_image_parameter
 }
 
 static void
-tst_usage()
+tst_usage(void)
 {
     PRINTF("Usage:\n"
            "\t<W>x<H>[.c_<CS>][.p_<PF>][.<pattern>].tst\n");
