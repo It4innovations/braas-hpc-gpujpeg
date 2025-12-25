@@ -507,10 +507,23 @@ const char* gpuGetErrorString(gpuError_t error);
 #ifdef __cplusplus
 } // extern "C"
 
+// Forward declare default_queue from gpujpeg_sycl namespace
+namespace gpujpeg_sycl {
+    extern sycl::queue* default_queue;
+}
+
 // Kernel launch - SYCL uses queue.submit with parallel_for
 // Helper function for launching SYCL kernels
 template<typename KernelFunc>
 void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t smem, KernelFunc&& kernel) {
+    // Use default queue if q is null
+    if (!q) {
+        if (!gpujpeg_sycl::default_queue) {
+            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v);
+        }
+        q = gpujpeg_sycl::default_queue;
+    }
+    
     q->submit([&](sycl::handler& cgh) {
         // Allocate local memory if needed
         if (smem > 0) {
@@ -525,6 +538,8 @@ void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t smem, Kern
             kernel(item);
         });
     });
+
+    //q->wait();
 }
 
 // Macro for kernel launch

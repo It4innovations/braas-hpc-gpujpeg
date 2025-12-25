@@ -141,10 +141,14 @@ gpuError_t gpuMemcpy2DAsync(void* dst, size_t dpitch, const void* src, size_t sp
         }
         
         // Perform 2D copy row by row
+        // Need to capture offset values, not computed pointers, for async operations
+        const uint8_t* src_base = static_cast<const uint8_t*>(src);
+        uint8_t* dst_base = static_cast<uint8_t*>(dst);
+        
         for (size_t row = 0; row < height; ++row) {
-            const uint8_t* src_row = static_cast<const uint8_t*>(src) + row * spitch;
-            uint8_t* dst_row = static_cast<uint8_t*>(dst) + row * dpitch;
-            q->memcpy(dst_row, src_row, width);
+            size_t src_offset = row * spitch;
+            size_t dst_offset = row * dpitch;
+            q->memcpy(dst_base + dst_offset, src_base + src_offset, width);
         }
         return gpuSuccess;
     } catch (...) {
