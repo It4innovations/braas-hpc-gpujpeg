@@ -527,8 +527,17 @@ gpujpeg_coder_init(struct gpujpeg_coder * coder)
     GPUJPEG_CHECK(gpuGetDevice(&device_idx), return -1);
     gpuGetDeviceProperties(&device_properties, device_idx);
     gpujpeg_cuda_check_error("Device info getting", return -1);
+
+#ifdef GPUJPEG_USE_CUDA    
     coder->cuda_cc_major = device_properties.major;
     coder->cuda_cc_minor = device_properties.minor;
+#else
+    coder->cuda_cc_major = 1;
+    coder->cuda_cc_minor = 0;
+#endif    
+
+    printf("GPUJPEG coder initialized on device #%d: %s (compute capability %d.%d)\n",
+        device_idx, device_properties.name, device_properties.major, device_properties.minor);
 
 # if 0    
     if (device_properties.major < 2) {
