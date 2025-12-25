@@ -132,6 +132,12 @@ template<>
 inline GPU_DEVICE int unit_size<GPUJPEG_4444_U8_P0123>() { return 4; }
 
 template<>
+inline GPU_DEVICE int unit_size<GPUJPEG_4444_U16_P0123>() { return 4; }
+
+template<>
+inline GPU_DEVICE int unit_size<GPUJPEG_4444_F32_P0123>() { return 4; }
+
+template<>
 inline GPU_DEVICE int unit_size<GPUJPEG_422_U8_P1020>() { return 2; }
 
 template <enum gpujpeg_pixel_format pixel_format>
@@ -166,6 +172,34 @@ gpujpeg_comp_to_raw_store<GPUJPEG_4444_U8_P0123>(uint8_t* d_data_raw, int& image
     d_data_raw[offset + 1] = r.y;
     d_data_raw[offset + 2] = r.z;
     d_data_raw[offset + 3] = r.w;
+}
+
+template <>
+inline GPU_DEVICE void
+gpujpeg_comp_to_raw_store<GPUJPEG_4444_U16_P0123>(uint8_t* d_data_raw, int& image_width, int& image_height, int& offset,
+                                                 int& x, int& y, uchar4& r)
+{
+    half *output = (half*)d_data_raw;
+
+    output[offset + 0] = __float2half((float)r.x / 255.0f);
+    output[offset + 1] = __float2half((float)r.y / 255.0f);
+    output[offset + 2] = __float2half((float)r.z / 255.0f);
+    output[offset + 3] = __float2half((float)r.w / 255.0f);
+}
+
+template <>
+inline GPU_DEVICE void
+gpujpeg_comp_to_raw_store<GPUJPEG_4444_F32_P0123>(uint8_t* d_data_raw, int& image_width, int& image_height, int& offset,
+                                                 int& x, int& y, uchar4& r)
+{
+    float scale = 1.0f / 255.0f;
+    float *h = (float *)d_data_raw + offset;
+    unsigned char *f = (unsigned char *)&r.x;
+
+    for (int i = 0; i < 4; i++) {
+        float fscale = (float) f[i] * scale;
+        h[i] = fscale;
+    }
 }
 
 template <>

@@ -46,7 +46,7 @@ enum gpujpeg_encoder_input_type {
     /// Encoder will use custom input buffer
     GPUJPEG_ENCODER_INPUT_IMAGE,
     /// Encoder will use OpenGL Texture PBO Resource as input buffer
-    GPUJPEG_ENCODER_INPUT_OPENGL_TEXTURE,
+    //GPUJPEG_ENCODER_INPUT_OPENGL_TEXTURE,
     /// Encoder will use custom GPU input buffer
     GPUJPEG_ENCODER_INPUT_GPU_IMAGE,
 };

@@ -224,7 +224,7 @@ size_t gpujpeg_encoder_max_memory(struct gpujpeg_parameters * param, struct gpuj
     size_t allocated_memory_size = 0;
     allocated_memory_size += encoder_memory_size;
     allocated_memory_size += image_memory_size;
-    if (image_input_type == GPUJPEG_ENCODER_INPUT_IMAGE || image_input_type == GPUJPEG_ENCODER_INPUT_OPENGL_TEXTURE) {
+    if (image_input_type == GPUJPEG_ENCODER_INPUT_IMAGE /*|| image_input_type == GPUJPEG_ENCODER_INPUT_OPENGL_TEXTURE*/) {
         allocated_memory_size += coder.data_raw_size;
     }
 
@@ -248,7 +248,7 @@ int gpujpeg_encoder_allocate(struct gpujpeg_encoder * encoder, const struct gpuj
     }
 
     // Allocate input raw buffer
-    if (image_input_type == GPUJPEG_ENCODER_INPUT_IMAGE || image_input_type == GPUJPEG_ENCODER_INPUT_OPENGL_TEXTURE) {
+    if (image_input_type == GPUJPEG_ENCODER_INPUT_IMAGE /*|| image_input_type == GPUJPEG_ENCODER_INPUT_OPENGL_TEXTURE*/) {
         // Allocate raw data internal buffer
         if (coder->data_raw_size > coder->data_raw_allocated_size) {
             coder->data_raw_allocated_size = 0;
@@ -410,6 +410,7 @@ gpujpeg_encoder_encode(struct gpujpeg_encoder* encoder, const struct gpujpeg_par
     else if (input->type == GPUJPEG_ENCODER_INPUT_GPU_IMAGE) {
         coder->d_data_raw = input->image;
     }
+    /*
     else if ( input->type == GPUJPEG_ENCODER_INPUT_OPENGL_TEXTURE ) {
         assert(input->texture != NULL);
 
@@ -431,6 +432,7 @@ gpujpeg_encoder_encode(struct gpujpeg_encoder* encoder, const struct gpujpeg_par
         }
         coder->d_data_raw = coder->d_data_raw_allocated;
     }
+    */
     else {
         // Unknown input type
         fprintf(stderr, "[GPUJPEG] [Error] Unknown encoder input type\\n");

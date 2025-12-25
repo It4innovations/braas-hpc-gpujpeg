@@ -138,6 +138,29 @@ inline GPU_DEVICE void raw_to_comp_load<GPUJPEG_4444_U8_P0123>(const uint8_t* d_
 }
 
 template<>
+inline GPU_DEVICE void raw_to_comp_load<GPUJPEG_4444_U16_P0123>(const uint8_t* d_data_raw, int& image_width, int& image_height, int& offset, int& x, int& y, uchar4& r)
+{
+    half* input = (half*)d_data_raw;
+
+    r.x = static_cast<uint8_t>(fminf(fmaxf(__half2float(input[offset + 0]) * 255.0f, 0.0f), 255.0f));
+    r.y = static_cast<uint8_t>(fminf(fmaxf(__half2float(input[offset + 1]) * 255.0f, 0.0f), 255.0f));
+    r.z = static_cast<uint8_t>(fminf(fmaxf(__half2float(input[offset + 2]) * 255.0f, 0.0f), 255.0f));
+    r.w = static_cast<uint8_t>(fminf(fmaxf(__half2float(input[offset + 3]) * 255.0f, 0.0f), 255.0f));
+}
+
+template<>
+inline GPU_DEVICE void raw_to_comp_load<GPUJPEG_4444_F32_P0123>(const uint8_t* d_data_raw, int& image_width, int& image_height, int& offset, int& x, int& y, uchar4& r)
+{
+    float scale = 255.0f;
+    float* h = (float*)d_data_raw + offset;
+    unsigned char* f = (unsigned char*)&r.x;
+
+    for (int i = 0; i < 4; i++) {
+        f[i] = (unsigned char)(h[i] * scale);
+    }
+}
+
+template<>
 inline GPU_DEVICE void raw_to_comp_load<GPUJPEG_422_U8_P1020>(const uint8_t* d_data_raw, int &image_width, int &image_height, int &offset, int &x, int &y, uchar4 &r)
 {
     r.x = d_data_raw[offset + 1];
@@ -260,6 +283,8 @@ gpujpeg_preprocessor_launch_encode_kernel(struct gpujpeg_coder* coder, dim3 grid
         switch ( PIXEL_FORMAT ) { \
             case GPUJPEG_444_U8_P012: LAUNCH_KERNEL(GPUJPEG_444_U8_P012, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
             case GPUJPEG_4444_U8_P0123: LAUNCH_KERNEL(GPUJPEG_4444_U8_P0123, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
+            case GPUJPEG_4444_U16_P0123: LAUNCH_KERNEL(GPUJPEG_4444_U16_P0123, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
+            case GPUJPEG_4444_F32_P0123: LAUNCH_KERNEL(GPUJPEG_4444_F32_P0123, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
             case GPUJPEG_422_U8_P1020: LAUNCH_KERNEL(GPUJPEG_422_U8_P1020, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
             case GPUJPEG_444_U8_P0P1P2: LAUNCH_KERNEL(GPUJPEG_444_U8_P0P1P2, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
             case GPUJPEG_422_U8_P0P1P2: LAUNCH_KERNEL(GPUJPEG_422_U8_P0P1P2, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
@@ -597,6 +622,12 @@ gpujpeg_preprocessor_channel_remap(struct gpujpeg_coder* coder)
         case GPUJPEG_4444_U8_P0123:
             GPU_KERNEL_LAUNCH((channel_remap_kernel<GPUJPEG_4444_U8_P0123>), grid, block, 0, coder->stream, coder->d_data_raw, width, pitch, height, mapping);
             break;
+        case GPUJPEG_4444_U16_P0123:
+            GPU_KERNEL_LAUNCH((channel_remap_kernel<GPUJPEG_4444_U16_P0123>), grid, block, 0, coder->stream, coder->d_data_raw, width, pitch, height, mapping);
+            break;
+        case GPUJPEG_4444_F32_P0123:
+            GPU_KERNEL_LAUNCH((channel_remap_kernel<GPUJPEG_4444_F32_P0123>), grid, block, 0, coder->stream, coder->d_data_raw, width, pitch, height, mapping);
+            break;
         case GPUJPEG_422_U8_P1020:
             GPU_KERNEL_LAUNCH((channel_remap_kernel<GPUJPEG_422_U8_P1020>), grid, block, 0, coder->stream, coder->d_data_raw, width, pitch, height, mapping);
             break;
@@ -624,6 +655,8 @@ gpujpeg_preprocessor_channel_remap(struct gpujpeg_coder* coder)
     switch ( coder->param_image.pixel_format ) {
         SWITCH_KERNEL(GPUJPEG_444_U8_P012);
         SWITCH_KERNEL(GPUJPEG_4444_U8_P0123);
+        SWITCH_KERNEL(GPUJPEG_4444_U16_P0123);
+        SWITCH_KERNEL(GPUJPEG_4444_F32_P0123);
         SWITCH_KERNEL(GPUJPEG_422_U8_P1020);
         SWITCH_KERNEL(GPUJPEG_444_U8_P0P1P2);
         SWITCH_KERNEL(GPUJPEG_422_U8_P0P1P2);

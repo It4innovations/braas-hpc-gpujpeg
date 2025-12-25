@@ -38,6 +38,7 @@
 #ifdef GPUJPEG_USE_CUDA
 
 #include <cuda_runtime.h>
+#include <cuda_fp16.h>
 
 // Kernel function qualifiers
 #define GPU_DEVICE                          __device__
@@ -162,6 +163,11 @@
     #include <hip/hip_runtime.h>
 #else
     #include <hip/hip_runtime_api.h>
+#endif
+
+#include <hip/hip_fp16.h>
+#ifndef half
+typedef __half half;
 #endif
 
 // Kernel function qualifiers
@@ -300,6 +306,10 @@
 namespace gpujpeg_sycl {
     extern sycl::queue* default_queue;
 }
+
+#ifndef half
+typedef sycl::half half;
+#endif
 
 // Kernel function qualifiers
 #define GPU_DEVICE                          /* empty */
