@@ -161,13 +161,12 @@
 // Use C-compatible HIP API header for C files
 #ifdef __cplusplus
     #include <hip/hip_runtime.h>
+    #include <hip/hip_fp16.h>
+    #ifndef half
+    typedef __half half;
+    #endif
 #else
     #include <hip/hip_runtime_api.h>
-#endif
-
-#include <hip/hip_fp16.h>
-#ifndef half
-typedef __half half;
 #endif
 
 // Kernel function qualifiers
