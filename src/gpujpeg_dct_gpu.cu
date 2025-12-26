@@ -265,18 +265,25 @@ gpujpeg_dct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA
                     -1024.0f  // = 8 * -128 ... level shift sum for all 8 coefficients
     );
 
+#ifdef GPUJPEG_USE_SYCL
+    item.barrier(sycl::access::fence_space::local_space);
+#endif
+
     // read coefficients back - each thread reads one row (no need to sync - only threads within same warp work on each block)
     // ... and transform the row horizontally
-    volatile dct_t * s_src = s_transposition + SHARED_STRIDE * dct_idx;
+#ifndef GPUJPEG_USE_SYCL
+    volatile
+#endif    
+    dct_t * s_src = s_transposition + SHARED_STRIDE * dct_idx;
     dct_t dct0, dct1, dct2, dct3, dct4, dct5, dct6, dct7;
     gpujpeg_dct_gpu(s_src[0], s_src[1], s_src[2], s_src[3], s_src[4], s_src[5], s_src[6], s_src[7],
                     dct0, dct1, dct2, dct3, dct4, dct5, dct6, dct7);
 
     // apply quantization to the row of coefficients (quantization table is actually transposed in global memory for coalesced memory acceses)
-    #if (defined(GPUJPEG_USE_CUDA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 200) || defined(GPUJPEG_USE_HIP) || defined(GPUJPEG_USE_SYCL)
+    #if defined(GPUJPEG_USE_CUDA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 200
     const float * const quantization_row = gpujpeg_dct_gpu_quantization_table_const + dct_idx; // Quantization table in constant memory for CCs < 2.0
     #else
-    const float * const quantization_row = quant_table + dct_idx; // Cached global memory reads for CCs >= 2.0 or HIP/SYCL
+    const float * const quantization_row = quant_table + dct_idx; // Cached global memory reads for CCs >= 2.0 or SYCL
     #endif
     const int out0 = GPU_RINTF(dct0 * quantization_row[0 * 8]);
     const int out1 = GPU_RINTF(dct1 * quantization_row[1 * 8]);

@@ -390,7 +390,7 @@ gpujpeg_huffman_gpu_decoder_decode_block(
  */
 template <bool SINGLE_COMP, int THREADS_PER_TBLOCK>
 GPU_GLOBAL void
-#if (defined(__CUDACC__) && __CUDA_ARCH__ < 200) || defined(GPUJPEG_USE_HIP) || defined(GPUJPEG_USE_SYCL)
+#if defined(__CUDACC__) && __CUDA_ARCH__ < 200
 __launch_bounds__(THREADS_PER_TBLOCK, 2)
 #elif defined(__CUDACC__)
 __launch_bounds__(THREADS_PER_TBLOCK, 4)
