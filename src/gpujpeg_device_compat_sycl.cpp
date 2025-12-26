@@ -158,14 +158,53 @@ gpuError_t gpuMemcpy2DAsync(void* dst, size_t dpitch, const void* src, size_t sp
 
 gpuError_t gpuMemcpyToSymbol(const void* symbol, const void* src, size_t count, 
                              size_t offset, int kind) {
-    // SYCL doesn't have direct symbol support - would need refactoring
-    return -1;
+    try {
+        if (!gpujpeg_sycl::default_queue) {
+            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v);
+        }
+        
+        // In SYCL, "symbols" are just pointers to device memory
+        // Cast away const since we're initializing the memory
+        void* dst = const_cast<void*>(static_cast<const void*>(static_cast<const char*>(symbol) + offset));
+        
+        // Perform the copy based on the kind
+        if (kind == gpuMemcpyHostToDevice) {
+            gpujpeg_sycl::default_queue->memcpy(dst, src, count).wait();
+        } else if (kind == gpuMemcpyDeviceToDevice) {
+            gpujpeg_sycl::default_queue->memcpy(dst, src, count).wait();
+        } else {
+            return -1;
+        }
+        
+        return gpuSuccess;
+    } catch (...) {
+        return -1;
+    }
 }
 
 gpuError_t gpuMemcpyToSymbolAsync(const void* symbol, const void* src, size_t count, 
                                   size_t offset, int kind, gpuStream_t stream) {
-    // SYCL doesn't have direct symbol support - would need refactoring
-    return -1;
+    try {
+        sycl::queue* q = stream ? stream : gpujpeg_sycl::default_queue;
+        if (!q) {
+            return -1;
+        }
+        
+        // In SYCL, "symbols" are just pointers to device memory
+        // Cast away const since we're initializing the memory
+        void* dst = const_cast<void*>(static_cast<const void*>(static_cast<const char*>(symbol) + offset));
+        
+        // Perform async copy based on the kind (no wait)
+        if (kind == gpuMemcpyHostToDevice || kind == gpuMemcpyDeviceToDevice) {
+            q->memcpy(dst, src, count);
+        } else {
+            return -1;
+        }
+        
+        return gpuSuccess;
+    } catch (...) {
+        return -1;
+    }
 }
 
 gpuError_t gpuStreamSynchronize(gpuStream_t stream) {

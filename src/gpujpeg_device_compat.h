@@ -541,11 +541,11 @@ void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t smem, Kern
     //q->wait();
 }
 
-// Macro for kernel launch
+// Macro for kernel launch - handle both cases with and without additional args
 #define GPU_KERNEL_LAUNCH(kernel, grid, block, smem, stream, ...) \
     sycl_launch_kernel(stream, grid, block, smem, \
         [=](sycl::nd_item<3> item) { \
-            kernel(item, __VA_ARGS__); \
+            kernel(item __VA_OPT__(,) __VA_ARGS__); \
         })
 #endif // __cplusplus
 
