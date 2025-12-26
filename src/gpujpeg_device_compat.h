@@ -709,6 +709,58 @@ void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t smem, Kern
         } \
     } while (0)
 
+// Debug macro to download device data and print it
+// Usage: GPUJPEG_DEBUG_PRINT_DEVICE_DATA(device_ptr, float, 10);
+#ifdef GPUJPEG_DEBUG_KERNEL_LAUNCH
+    #define GPUJPEG_DEBUG_PRINT_DEVICE_DATA(ptr, type, count) \
+        do { \
+            type* _host_data = (type*)malloc((count) * sizeof(type)); \
+            if (_host_data) { \
+                gpuError_t _err = gpuMemcpy(_host_data, ptr, (count) * sizeof(type), gpuMemcpyDeviceToHost); \
+                if (_err == gpuSuccess) { \
+                    fprintf(stderr, "[GPUJPEG_DEBUG] Device data at %p (%s[%d]):\n", (void*)(ptr), #type, (int)(count)); \
+                    for (int _i = 0; _i < (int)(count); _i++) { \
+                        fprintf(stderr, "  [%d] = ", _i); \
+                        if (sizeof(type) == sizeof(float)) { \
+                            fprintf(stderr, "%f\n", (double)*((float*)&_host_data[_i])); \
+                        } else if (sizeof(type) == sizeof(double)) { \
+                            fprintf(stderr, "%f\n", *((double*)&_host_data[_i])); \
+                        } else if (sizeof(type) == sizeof(int)) { \
+                            fprintf(stderr, "%d\n", *((int*)&_host_data[_i])); \
+                        } else if (sizeof(type) == sizeof(unsigned int)) { \
+                            fprintf(stderr, "%u\n", *((unsigned int*)&_host_data[_i])); \
+                        } else if (sizeof(type) == sizeof(char)) { \
+                            fprintf(stderr, "%d\n", (int)*((char*)&_host_data[_i])); \
+                        } else if (sizeof(type) == sizeof(unsigned char)) { \
+                            fprintf(stderr, "%u\n", (unsigned int)*((unsigned char*)&_host_data[_i])); \
+                        } else if (sizeof(type) == sizeof(short)) { \
+                            fprintf(stderr, "%d\n", (int)*((short*)&_host_data[_i])); \
+                        } else if (sizeof(type) == sizeof(unsigned short)) { \
+                            fprintf(stderr, "%u\n", (unsigned int)*((unsigned short*)&_host_data[_i])); \
+                        } else if (sizeof(type) == sizeof(long)) { \
+                            fprintf(stderr, "%ld\n", *((long*)&_host_data[_i])); \
+                        } else if (sizeof(type) == sizeof(unsigned long)) { \
+                            fprintf(stderr, "%lu\n", *((unsigned long*)&_host_data[_i])); \
+                        } else { \
+                            fprintf(stderr, "0x"); \
+                            for (size_t _b = 0; _b < sizeof(type); _b++) { \
+                                fprintf(stderr, "%02x", ((unsigned char*)&_host_data[_i])[_b]); \
+                            } \
+                            fprintf(stderr, "\n"); \
+                        } \
+                    } \
+                } else { \
+                    fprintf(stderr, "[GPUJPEG_DEBUG] Failed to copy device data: %s\n", gpuGetErrorString(_err)); \
+                } \
+                free(_host_data); \
+            } else { \
+                fprintf(stderr, "[GPUJPEG_DEBUG] Failed to allocate host memory for debug print\n"); \
+            } \
+        } while (0)
+#else
+    #define GPUJPEG_DEBUG_PRINT_DEVICE_DATA(ptr, type, count) /* disabled */
+#endif
+
 // Stream type for public API (using void* for maximum compatibility)
 #ifndef __DRIVER_TYPES_H__
 struct CUstream_st;
