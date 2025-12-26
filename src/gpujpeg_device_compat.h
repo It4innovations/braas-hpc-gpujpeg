@@ -13,6 +13,9 @@
 
 #include <stddef.h>  // for size_t
 
+// Uncomment to enable kernel launch logging
+#define GPUJPEG_DEBUG_KERNEL_LAUNCH
+
 // Determine which GPU backend to use
 // Check CMake-defined macros first, then fall back to compiler detection
 #if defined(GPUJPEG_USE_HIP)
@@ -144,9 +147,17 @@
 #define GPUART_VERSION                      CUDART_VERSION
 #endif
 
+// Helper to get dim3 components (works with both dim3 and scalar)
+#define GPU_DIM_X(d) (__builtin_types_compatible_p(__typeof__(d), dim3) ? (d).x : (unsigned int)(d))
+#define GPU_DIM_Y(d) (__builtin_types_compatible_p(__typeof__(d), dim3) ? (d).y : 1u)
+#define GPU_DIM_Z(d) (__builtin_types_compatible_p(__typeof__(d), dim3) ? (d).z : 1u)
+
 // Kernel launch syntax (CUDA uses <<<>>> syntax natively)
 #define GPU_KERNEL_LAUNCH(kernel, grid, block, smem, stream, ...) \
-    kernel<<<grid, block, smem, stream>>>(__VA_ARGS__)
+    do { \
+        GPUJPEG_KERNEL_LAUNCH_LOG(kernel, grid, block, smem, stream); \
+        kernel<<<grid, block, smem, stream>>>(__VA_ARGS__); \
+    } while(0)
 
 // ==============================================================================
 // HIP Backend
@@ -286,9 +297,17 @@
 #define GPUART_VERSION                      HIP_VERSION
 #endif
 
+// Helper to get dim3 components (works with both dim3 and scalar)
+#define GPU_DIM_X(d) (__builtin_types_compatible_p(__typeof__(d), dim3) ? (d).x : (unsigned int)(d))
+#define GPU_DIM_Y(d) (__builtin_types_compatible_p(__typeof__(d), dim3) ? (d).y : 1u)
+#define GPU_DIM_Z(d) (__builtin_types_compatible_p(__typeof__(d), dim3) ? (d).z : 1u)
+
 // Kernel launch syntax (HIP also uses <<<>>> syntax)
 #define GPU_KERNEL_LAUNCH(kernel, grid, block, smem, stream, ...) \
-    kernel<<<grid, block, smem, stream>>>(__VA_ARGS__)
+    do { \
+        GPUJPEG_KERNEL_LAUNCH_LOG(kernel, grid, block, smem, stream); \
+        kernel<<<grid, block, smem, stream>>>(__VA_ARGS__); \
+    } while(0)
 
 // ==============================================================================
 // SYCL Backend
@@ -512,6 +531,11 @@ namespace gpujpeg_sycl {
 }
 
 // Kernel launch - SYCL uses queue.submit with parallel_for
+// Helper to convert grid/block to dim3 (handles both dim3 and scalar)
+inline dim3 to_dim3(const dim3& d) { return d; }
+inline dim3 to_dim3(unsigned int v) { return dim3(v, 1, 1); }
+inline dim3 to_dim3(int v) { return dim3(v, 1, 1); }
+
 // Helper function for launching SYCL kernels
 template<typename KernelFunc>
 void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t smem, KernelFunc&& kernel) {
@@ -543,10 +567,15 @@ void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t smem, Kern
 
 // Macro for kernel launch - handle both cases with and without additional args
 #define GPU_KERNEL_LAUNCH(kernel, grid, block, smem, stream, ...) \
-    sycl_launch_kernel(stream, grid, block, smem, \
-        [=](sycl::nd_item<3> item) { \
-            kernel(item __VA_OPT__(,) __VA_ARGS__); \
-        })
+    do { \
+        dim3 _grid = to_dim3(grid); \
+        dim3 _block = to_dim3(block); \
+        GPUJPEG_KERNEL_LAUNCH_LOG(kernel, _grid, _block, smem, stream); \
+        sycl_launch_kernel(stream, _grid, _block, smem, \
+            [=](sycl::nd_item<3> item) { \
+                kernel(item __VA_OPT__(,) __VA_ARGS__); \
+            }); \
+    } while(0)
 #endif // __cplusplus
 
 #endif // GPUJPEG_USE_SYCL
@@ -554,6 +583,27 @@ void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t smem, Kern
 // ==============================================================================
 // Common macros and utilities
 // ==============================================================================
+
+// Conditional kernel launch logging
+#ifdef GPUJPEG_DEBUG_KERNEL_LAUNCH
+    #if defined(GPUJPEG_USE_CUDA) || defined(GPUJPEG_USE_HIP)
+        #define GPUJPEG_KERNEL_LAUNCH_LOG(kernel, grid, block, smem, stream) \
+            fprintf(stderr, "[GPU_KERNEL_LAUNCH] %s: grid=(%u,%u,%u) block=(%u,%u,%u) smem=%zu stream=%p\n", \
+                    #kernel, GPU_DIM_X(grid), GPU_DIM_Y(grid), GPU_DIM_Z(grid), \
+                    GPU_DIM_X(block), GPU_DIM_Y(block), GPU_DIM_Z(block), (size_t)(smem), (void*)(stream))
+    #elif defined(GPUJPEG_USE_SYCL)
+        #define GPUJPEG_KERNEL_LAUNCH_LOG(kernel, grid, block, smem, stream) \
+            do { \
+                dim3 _log_grid = to_dim3(grid); \
+                dim3 _log_block = to_dim3(block); \
+                fprintf(stderr, "[GPU_KERNEL_LAUNCH] %s: grid=(%u,%u,%u) block=(%u,%u,%u) smem=%zu stream=%p\n", \
+                        #kernel, _log_grid.x, _log_grid.y, _log_grid.z, _log_block.x, _log_block.y, _log_block.z, \
+                        (size_t)(smem), (void*)(stream)); \
+            } while(0)
+    #endif
+#else
+    #define GPUJPEG_KERNEL_LAUNCH_LOG(kernel, grid, block, smem, stream) /* disabled */
+#endif
 
 // Helper macro for checking GPU errors
 #define GPUJPEG_CHECK_GPU(call, err_action) \
