@@ -180,7 +180,7 @@ GPU_CONSTANT float gpujpeg_dct_gpu_quantization_table_const[64];
  */
 template <int WARP_COUNT>
 GPU_GLOBAL void
-gpujpeg_dct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA int block_count_x, int block_count_y, uint8_t* source, const unsigned int source_stride,
+gpujpeg_dct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA int block_count_x, int block_count_y, uint8_t* source, const unsigned int source_stride,
                        int16_t* output, int output_stride, const float * const quant_table)
 {
     // each warp processes 4 8x8 blocks (horizontally neighboring)
@@ -217,7 +217,11 @@ gpujpeg_dct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA int block_count_x, i
     };
 
     // buffer for transpositions of all blocks
+#ifdef GPUJPEG_USE_SYCL
+    GPU_SHARED_PTR(dct_t, s_transposition_all, 0);
+#else
     GPU_SHARED dct_t s_transposition_all[SHARED_SIZE_TOTAL];
+#endif
 
     // pointer to begin of transposition buffer for thread's block
     dct_t * const s_transposition = s_transposition_all + block_idx_y * SHARED_SIZE_WARP + block_idx_x * 8;
@@ -295,7 +299,7 @@ gpujpeg_dct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA int block_count_x, i
 }
 
 // Explicit template instantiation for SYCL compatibility
-template GPU_GLOBAL void gpujpeg_dct_gpu_kernel<4>(GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA int block_count_x, int block_count_y, uint8_t* source, const unsigned int source_stride,
+template GPU_GLOBAL void gpujpeg_dct_gpu_kernel<4>(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA int block_count_x, int block_count_y, uint8_t* source, const unsigned int source_stride,
                        int16_t* output, int output_stride, const float * const quant_table);
 
 /** Quantization table */
@@ -475,7 +479,7 @@ gpujpeg_idct_gpu_kernel_inplace(float* V8)
  * @return None
  */
 GPU_GLOBAL void
-gpujpeg_idct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA int16_t* source, uint8_t* result, int output_stride, uint16_t* quantization_table)
+gpujpeg_idct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA int16_t* source, uint8_t* result, int output_stride, uint16_t* quantization_table)
 {
 	//here the grid is assumed to be only in x - it saves a few operations; if a larger
 	//block count is used (e. g. GPUJPEG_IDCT_BLOCK_Z == 1), it would need to be adjusted,
@@ -489,7 +493,13 @@ gpujpeg_idct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA int16_t* source, ui
 	//pointer to the begin of data for this thread block
 	int16_t* sourcePtr = (int16_t*) (source) + picBlockNumber * 8;
 
+#ifdef GPUJPEG_USE_SYCL
+	// For SYCL, get pointer to shared memory and cast to appropriate type
+	float (*data)[8][GPUJPEG_IDCT_BLOCK_Y][GPUJPEG_IDCT_BLOCK_X + 1] = 
+		reinterpret_cast<float (*)[8][GPUJPEG_IDCT_BLOCK_Y][GPUJPEG_IDCT_BLOCK_X + 1]>(_sycl_shared_mem);
+#else
 	GPU_SHARED float data[GPUJPEG_IDCT_BLOCK_Z][8][GPUJPEG_IDCT_BLOCK_Y][GPUJPEG_IDCT_BLOCK_X + 1];
+#endif
 
 	//variables to be used later more times (only one multiplication here)
 	unsigned int z64 = GPU_THREAD_IDX_Z * 64;
@@ -661,6 +671,15 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder)
 
         enum { WARP_COUNT = 4 };
 
+        // Calculate shared memory size needed
+        typedef float dct_t;
+        enum {
+            SHARED_STRIDE_DCT = ((32 * sizeof(dct_t)) | 4) / sizeof(dct_t),
+            SHARED_SIZE_WARP_DCT = SHARED_STRIDE_DCT * 8,
+            SHARED_SIZE_TOTAL_DCT = SHARED_SIZE_WARP_DCT * WARP_COUNT
+        };
+        size_t shared_mem_size = SHARED_SIZE_TOTAL_DCT * sizeof(dct_t);
+
         // Perform block-wise DCT processing
         dim3 dct_grid(
             gpujpeg_div_and_round_up(block_count_x, 4),
@@ -668,7 +687,7 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder)
             1
         );
         dim3 dct_block(4 * 8, WARP_COUNT);
-        GPU_KERNEL_LAUNCH(gpujpeg_dct_gpu_kernel<WARP_COUNT>, dct_grid, dct_block, 0, coder->stream,
+        GPU_KERNEL_LAUNCH(gpujpeg_dct_gpu_kernel<WARP_COUNT>, dct_grid, dct_block, shared_mem_size, coder->stream,
             block_count_x,
             block_count_y,
             component->d_data,
@@ -717,11 +736,14 @@ gpujpeg_idct_gpu(struct gpujpeg_decoder* decoder)
             return -1;
         gpujpeg_cuda_check_error("Copy IDCT quantization table to constant memory", return -1);
 
+        // Calculate shared memory size for IDCT
+        size_t shared_mem_size_idct = GPUJPEG_IDCT_BLOCK_Z * 8 * GPUJPEG_IDCT_BLOCK_Y * (GPUJPEG_IDCT_BLOCK_X + 1) * sizeof(float);
+
         dim3 dct_grid(gpujpeg_div_and_round_up(block_count_x * block_count_y,
 				(GPUJPEG_IDCT_BLOCK_X * GPUJPEG_IDCT_BLOCK_Y * GPUJPEG_IDCT_BLOCK_Z) / GPUJPEG_BLOCK_SIZE), 1);
         dim3 dct_block(GPUJPEG_IDCT_BLOCK_X, GPUJPEG_IDCT_BLOCK_Y, GPUJPEG_IDCT_BLOCK_Z);
  
-        GPU_KERNEL_LAUNCH(gpujpeg_idct_gpu_kernel, dct_grid, dct_block, 0, coder->stream,
+        GPU_KERNEL_LAUNCH(gpujpeg_idct_gpu_kernel, dct_grid, dct_block, shared_mem_size_idct, coder->stream,
             component->d_data_quantized,
             component->d_data,
             component->data_width,

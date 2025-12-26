@@ -396,7 +396,7 @@ __launch_bounds__(THREADS_PER_TBLOCK, 2)
 __launch_bounds__(THREADS_PER_TBLOCK, 4)
 #endif
 gpujpeg_huffman_decoder_decode_kernel(
-    GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA
+    GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA
     struct gpujpeg_huffman_gpu_decoder huffman_gpu_decoder,
     struct gpujpeg_component* d_component,
     struct gpujpeg_segment* d_segment,
@@ -413,7 +413,11 @@ gpujpeg_huffman_decoder_decode_kernel(
     struct gpujpeg_segment* segment = &d_segment[segment_index];
     
     // Byte buffers in shared memory
+#ifdef GPUJPEG_USE_SYCL
+    uint4* s_byte_all = reinterpret_cast<uint4*>(_sycl_shared_mem);
+#else
     GPU_SHARED uint4 s_byte_all[2 * THREADS_PER_TBLOCK]; // 32 bytes per thread
+#endif
     uint4 * const s_byte = s_byte_all + 2 * GPU_THREAD_IDX_X;
     
     // Last DC coefficient values   TODO: try to move into shared memory
@@ -725,8 +729,9 @@ gpujpeg_huffman_gpu_decoder_decode(struct gpujpeg_decoder* decoder)
     // Run decoding kernel
     dim3 thread(THREADS_PER_TBLOCK);
     dim3 grid(gpujpeg_div_and_round_up(decoder->segment_count, THREADS_PER_TBLOCK));
+    size_t shared_mem_size_decoder = 2 * THREADS_PER_TBLOCK * sizeof(uint4);
     if(comp_count == 1) {
-        GPU_KERNEL_LAUNCH((gpujpeg_huffman_decoder_decode_kernel<true, THREADS_PER_TBLOCK>), grid, thread, 0, coder->stream,
+        GPU_KERNEL_LAUNCH((gpujpeg_huffman_decoder_decode_kernel<true, THREADS_PER_TBLOCK>), grid, thread, shared_mem_size_decoder, coder->stream,
             *decoder->huffman_gpu_decoder,
             coder->d_component, 
             coder->d_segment, 
@@ -737,7 +742,7 @@ gpujpeg_huffman_gpu_decoder_decode(struct gpujpeg_decoder* decoder)
             coder->d_data_quantized
         );
     } else {
-        GPU_KERNEL_LAUNCH((gpujpeg_huffman_decoder_decode_kernel<false, THREADS_PER_TBLOCK>), grid, thread, 0, coder->stream,
+        GPU_KERNEL_LAUNCH((gpujpeg_huffman_decoder_decode_kernel<false, THREADS_PER_TBLOCK>), grid, thread, shared_mem_size_decoder, coder->stream,
             *decoder->huffman_gpu_decoder,
             coder->d_component, 
             coder->d_segment, 

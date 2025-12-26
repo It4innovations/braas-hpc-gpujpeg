@@ -14,7 +14,7 @@
 #include <stddef.h>  // for size_t
 
 // Uncomment to enable kernel launch logging
-#define GPUJPEG_DEBUG_KERNEL_LAUNCH
+//#define GPUJPEG_DEBUG_KERNEL_LAUNCH
 
 // Determine which GPU backend to use
 // Check CMake-defined macros first, then fall back to compiler detection
@@ -72,6 +72,11 @@
 // Synchronization
 #define GPU_SYNCTHREADS()                   __syncthreads()
 
+// Warp/Sub-group operations
+#define GPU_WARP_SIZE                       32
+#define GPU_SUB_GROUP_BARRIER(item)         /* implicit in CUDA warps */
+#define GPU_REQD_SUB_GROUP_SIZE(size)       /* not needed for CUDA */
+
 // Atomic operations
 #define GPU_ATOMIC_ADD(ptr, val)            atomicAdd(ptr, val)
 
@@ -80,6 +85,11 @@
 
 // Vector types
 #define GPU_MAKE_UINT4(x, y, z, w)          make_uint4(x, y, z, w)
+
+// Warp collective functions
+#ifndef FULL_MASK
+#define FULL_MASK 0xFFFFFFFF
+#endif
 
 // Type definitions
 #define gpuStream_t                         cudaStream_t
@@ -159,6 +169,11 @@
         kernel<<<grid, block, smem, stream>>>(__VA_ARGS__); \
     } while(0)
 
+// For CUDA/HIP, shared memory parameter is not needed
+#define GPU_SHARED_MEM_PARAM /* empty */
+#define GPU_SHARED_PTR(type, name, offset) /* empty - name already declared as GPU_SHARED array */
+
+
 // ==============================================================================
 // HIP Backend
 // ==============================================================================
@@ -209,6 +224,11 @@
 // Synchronization
 #define GPU_SYNCTHREADS()                   __syncthreads()
 
+// Warp/Sub-group operations
+#define GPU_WARP_SIZE                       64  // AMD uses wavefront size 64 by default
+#define GPU_SUB_GROUP_BARRIER(item)         /* implicit in HIP wavefronts */
+#define GPU_REQD_SUB_GROUP_SIZE(size)       /* not needed for HIP */
+
 // Atomic operations
 #define GPU_ATOMIC_ADD(ptr, val)            atomicAdd(ptr, val)
 
@@ -218,6 +238,11 @@
 
 // Vector types
 #define GPU_MAKE_UINT4(x, y, z, w)          make_uint4(x, y, z, w)
+
+// Warp collective functions
+#ifndef FULL_MASK
+#define FULL_MASK 0xFFFFFFFF
+#endif
 
 // Type definitions
 #ifdef __cplusplus
@@ -309,6 +334,11 @@
         kernel<<<grid, block, smem, stream>>>(__VA_ARGS__); \
     } while(0)
 
+// For CUDA/HIP, shared memory parameter is not needed
+#define GPU_SHARED_MEM_PARAM /* empty */
+#define GPU_SHARED_PTR(type, name, offset) /* empty - name already declared as GPU_SHARED array */
+
+
 // ==============================================================================
 // SYCL Backend
 // ==============================================================================
@@ -365,7 +395,15 @@ namespace gpujpeg_sycl {
 #define GPU_GRID_DIM_Z                  (item.get_group_range(0))
 
 // Synchronization
-#define GPU_SYNCTHREADS()               item.barrier()
+#define GPU_SYNCTHREADS()               item.barrier(sycl::access::fence_space::local_space)
+
+// Sub-group (warp) operations for SYCL
+#define GPU_WARP_SIZE                       32  // Assume 32 for compatibility, may vary by device
+#define GPU_SUB_GROUP_BARRIER(item)         do { \
+                                                sycl::sub_group sg = item.get_sub_group(); \
+                                                sycl::group_barrier(sg, sycl::memory_scope::sub_group); \
+                                            } while(0)
+#define GPU_REQD_SUB_GROUP_SIZE(size)       [[intel::reqd_sub_group_size(size)]]
 
 // Atomic operations
 #define GPU_ATOMIC_ADD(ptr, val)            sycl::atomic_ref<unsigned int, sycl::memory_order::relaxed, sycl::memory_scope::device>(*ptr).fetch_add(val)
@@ -391,6 +429,24 @@ inline uint32_t __byte_perm(uint32_t x, uint32_t y, uint32_t s) {
     }
     return result;
 }
+
+// Sub-group (warp) collective functions for SYCL
+// __ballot_sync equivalent - returns bitmask of predicate across sub-group
+inline uint32_t __ballot_sync(uint32_t mask, bool predicate) {
+    sycl::sub_group sg = sycl::ext::oneapi::experimental::this_sub_group();
+    sycl::vec<uint32_t, 1> ballot_result = sycl::group_ballot(sg, predicate);
+    return ballot_result[0];
+}
+
+// __clz (count leading zeros) - SYCL equivalent
+inline int __clz(uint32_t x) {
+    return sycl::clz(x);
+}
+
+#ifndef FULL_MASK
+#define FULL_MASK 0xFFFFFFFF
+#endif
+
 
 // Vector types - SYCL uses sycl::vec instead of CUDA vector types
 #define GPU_MAKE_UINT4(x, y, z, w)      sycl::uint4(x, y, z, w)
@@ -548,18 +604,22 @@ void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t smem, Kern
     }
     
     q->submit([&](sycl::handler& cgh) {
-        // Allocate local memory if needed
-        if (smem > 0) {
-            sycl::local_accessor<uint8_t, 1> local_mem(smem, cgh);
-        }
-        
         sycl::range<3> global_range(grid.z * block.z, grid.y * block.y, grid.x * block.x);
         sycl::range<3> local_range(block.z, block.y, block.x);
         
-        cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
-                        [=](sycl::nd_item<3> item) {
-            kernel(item);
-        });
+        // Allocate local memory if needed
+        if (smem > 0) {
+            sycl::local_accessor<uint8_t, 1> local_mem(smem, cgh);
+            cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                            [=](sycl::nd_item<3> item) {
+                kernel(item, local_mem.get_pointer());
+            });
+        } else {
+            cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                            [=](sycl::nd_item<3> item) {
+                kernel(item, nullptr);
+            });
+        }
     });
 
     //q->wait();
@@ -572,10 +632,18 @@ void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t smem, Kern
         dim3 _block = to_dim3(block); \
         GPUJPEG_KERNEL_LAUNCH_LOG(kernel, _grid, _block, smem, stream); \
         sycl_launch_kernel(stream, _grid, _block, smem, \
-            [=](sycl::nd_item<3> item) { \
-                kernel(item __VA_OPT__(,) __VA_ARGS__); \
+            [=](sycl::nd_item<3> item, uint8_t* shared_mem_ptr) { \
+                kernel(item, shared_mem_ptr __VA_OPT__(,) __VA_ARGS__); \
             }); \
     } while(0)
+
+// Macro to declare shared memory parameter for SYCL kernels
+#define GPU_SHARED_MEM_PARAM , uint8_t* _sycl_shared_mem
+
+// Macro to get typed pointer to shared memory for SYCL
+#define GPU_SHARED_PTR(type, name, offset) \
+    type* name = reinterpret_cast<type*>(_sycl_shared_mem + (offset))
+
 #endif // __cplusplus
 
 #endif // GPUJPEG_USE_SYCL

@@ -321,7 +321,7 @@ __launch_bounds__(WARPS_NUM * 32, 1024 / (WARPS_NUM * 32))
 #endif
 GPU_GLOBAL static void
 gpujpeg_huffman_encoder_encode_kernel_warp(
-    GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA
+    GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA
     struct gpujpeg_segment* d_segment,
     int segment_count,
     uint8_t* d_data_compressed,
@@ -336,7 +336,11 @@ gpujpeg_huffman_encoder_encode_kernel_warp(
     int tid = GPU_THREAD_IDX_X & 31;
 
     enum { extradata = (GPUJPEG_MAX_COMPONENT_COUNT + (sizeof(int) - 1)) / sizeof(int) };
+#ifdef GPUJPEG_USE_SYCL
+    uint4* s_out_all = reinterpret_cast<uint4*>(_sycl_shared_mem);
+#else
     GPU_SHARED uint4 s_out_all[(64 + extradata) * WARPS_NUM];
+#endif
     unsigned int * s_out = (unsigned int*)(s_out_all + warpidx * (64 + 1));
 
     // Number of remaining codewords in shared buffer
@@ -435,7 +439,7 @@ __launch_bounds__(SERIALIZATION_THREADS_PER_TBLOCK, 4)
 #endif
 GPU_GLOBAL static void
 gpujpeg_huffman_encoder_serialization_kernel(
-    GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA
+    GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA
     struct gpujpeg_segment* d_segment,
     int segment_count,
     const uint8_t* const d_src,
@@ -443,7 +447,11 @@ gpujpeg_huffman_encoder_serialization_kernel(
 ) {
 #if defined(__CUDACC__) && __CUDA_ARCH__ >= 200 //|| defined(__HIP_DEVICE_COMPILE__) || defined(SYCL_DEVICE_ONLY)
     // Temp buffer for all threads of the threadblock
+#ifdef GPUJPEG_USE_SYCL
+    uint4* s_temp_all = reinterpret_cast<uint4*>(_sycl_shared_mem);
+#else
     GPU_SHARED uint4 s_temp_all[2 * SERIALIZATION_THREADS_PER_TBLOCK];
+#endif
 
     // Thread's 32 bytes in shared memory for output composition
     uint4 * const s_temp = s_temp_all + GPU_THREAD_IDX_X * 2;
@@ -532,13 +540,17 @@ gpujpeg_huffman_encoder_serialization_kernel(
  */
 GPU_GLOBAL static void
 gpujpeg_huffman_encoder_allocation_kernel (
-    GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA
+    GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA
     struct gpujpeg_segment* const d_segment,
     const int segment_count,
     unsigned int * d_gpujpeg_huffman_output_byte_count
 ) {
     // offsets of segments
+#ifdef GPUJPEG_USE_SYCL
+    unsigned int* s_segment_offsets = reinterpret_cast<unsigned int*>(_sycl_shared_mem);
+#else
     GPU_SHARED unsigned int s_segment_offsets[512];
+#endif
 
     // cumulative sum of bytes of all segments
     unsigned int total_byte_count = 0;
@@ -583,7 +595,7 @@ gpujpeg_huffman_encoder_allocation_kernel (
  */
 GPU_GLOBAL static void
 gpujpeg_huffman_encoder_compaction_kernel (
-    GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA
+    GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA
     struct gpujpeg_segment* const d_segment,
     const int segment_count,
     const uint8_t* const d_src,
@@ -598,7 +610,11 @@ gpujpeg_huffman_encoder_compaction_kernel (
     }
 
     // temp variables for all warps
+#ifdef GPUJPEG_USE_SYCL
+    uint4** volatile s_out_ptrs = reinterpret_cast<uint4** volatile>(_sycl_shared_mem);
+#else
     GPU_SHARED uint4* volatile s_out_ptrs[WARPS_NUM];
+#endif
 
     // get info about the segment
     const unsigned int segment_byte_count = (d_segment[segment_idx].data_compressed_size + 15) & ~15;  // number of bytes rounded up to multiple of 16
@@ -752,14 +768,18 @@ gpujpeg_huffman_gpu_encoder_emit_left_bits(int & put_value, int & put_bits, uint
  * @return 0 if succeeds, otherwise nonzero
  */
 GPU_DEVICE static int
-gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA int & put_value, int & put_bits, int & dc, int16_t* data, uint8_t* & data_compressed,
+gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA int & put_value, int & put_bits, int & dc, int16_t* data, uint8_t* & data_compressed,
     const struct gpujpeg_table_huffman_encoder* d_table_dc, const struct gpujpeg_table_huffman_encoder* d_table_ac)
 {
     typedef uint64_t loading_t;
     const int loading_iteration_count = 64 * 2 / sizeof(loading_t);
 
     // Load block to shared memory
+#ifdef GPUJPEG_USE_SYCL
+    int16_t* s_data = reinterpret_cast<int16_t*>(_sycl_shared_mem);
+#else
     GPU_SHARED int16_t s_data[64 * THREAD_BLOCK_SIZE];
+#endif
     for ( int i = 0; i < loading_iteration_count; i++ ) {
         ((loading_t*)s_data)[loading_iteration_count * GPU_THREAD_IDX_X + i] = ((loading_t*)data)[i];
     }
@@ -855,7 +875,7 @@ gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA in
  */
 GPU_GLOBAL static void
 gpujpeg_huffman_encoder_encode_kernel(
-    GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA
+    GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA
     struct gpujpeg_component* d_component,
     struct gpujpeg_segment* d_segment,
     int comp_count,
@@ -912,7 +932,7 @@ gpujpeg_huffman_encoder_encode_kernel(
             }
 
             // Encode 8x8 block
-            if ( gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_ARG GPU_ITEM_COMMA put_value, put_bits, component_dc, block, data_compressed, d_table_dc, d_table_ac) != 0 )
+            if ( gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_ARG GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA put_value, put_bits, component_dc, block, data_compressed, d_table_dc, d_table_ac) != 0 )
                 break;
         }
     }
@@ -958,7 +978,7 @@ gpujpeg_huffman_encoder_encode_kernel(
                         }
 
                         // Encode 8x8 block
-                        gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_ARG GPU_ITEM_COMMA put_value, put_bits, component_dc, block, data_compressed, d_table_dc, d_table_ac);
+                        gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_ARG GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA put_value, put_bits, component_dc, block, data_compressed, d_table_dc, d_table_ac);
                     }
                 }
             }
@@ -1136,10 +1156,13 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
 
     // Select encoder kernel based on compute capability
     if ( encoder->coder.cuda_cc_major < 2 ) {
+        // Calculate shared memory size
+        size_t shared_mem_size_encode = 64 * THREAD_BLOCK_SIZE * sizeof(int16_t);
+        
         // Run kernel
         dim3 thread(THREAD_BLOCK_SIZE);
         dim3 grid(gpujpeg_div_and_round_up(coder->segment_count, thread.x));
-        GPU_KERNEL_LAUNCH(gpujpeg_huffman_encoder_encode_kernel, grid, thread, 0, coder->stream,
+        GPU_KERNEL_LAUNCH(gpujpeg_huffman_encoder_encode_kernel, grid, thread, shared_mem_size_encode, coder->stream,
             coder->d_component,
             coder->d_segment,
             comp_count,
@@ -1149,11 +1172,15 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
         );
         gpujpeg_cuda_check_error("Huffman encoding failed", return -1);
     } else {
+        // Calculate shared memory size for warp encoder
+        enum { extradata = (GPUJPEG_MAX_COMPONENT_COUNT + (sizeof(int) - 1)) / sizeof(int) };
+        size_t shared_mem_size_warp = (64 + extradata) * WARPS_NUM * sizeof(uint4);
+        
         // Run encoder kernel
         dim3 thread(32 * WARPS_NUM);
         dim3 grid = gpujpeg_huffman_gpu_encoder_grid_size(gpujpeg_div_and_round_up(coder->segment_count, (thread.x / 32)));
         if(comp_count == 1) {
-            GPU_KERNEL_LAUNCH((gpujpeg_huffman_encoder_encode_kernel_warp<true>), grid, thread, 0, coder->stream,
+            GPU_KERNEL_LAUNCH((gpujpeg_huffman_encoder_encode_kernel_warp<true>), grid, thread, shared_mem_size_warp, coder->stream,
                 coder->d_segment,
                 coder->segment_count,
                 coder->d_data_compressed,
@@ -1165,7 +1192,7 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
             );
             gpujpeg_cuda_check_error("Huffman encoding failed", return -1);
         } else {
-            GPU_KERNEL_LAUNCH((gpujpeg_huffman_encoder_encode_kernel_warp<false>), grid, thread, 0, coder->stream,
+            GPU_KERNEL_LAUNCH((gpujpeg_huffman_encoder_encode_kernel_warp<false>), grid, thread, shared_mem_size_warp, coder->stream,
                 coder->d_segment,
                 coder->segment_count,
                 coder->d_data_compressed,
@@ -1180,7 +1207,8 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
 
         // Run codeword serialization kernel
         const int num_serialization_tblocks = gpujpeg_div_and_round_up(coder->segment_count, SERIALIZATION_THREADS_PER_TBLOCK);
-        GPU_KERNEL_LAUNCH(gpujpeg_huffman_encoder_serialization_kernel, num_serialization_tblocks, SERIALIZATION_THREADS_PER_TBLOCK, 0,
+        size_t shared_mem_size_serialization = 2 * SERIALIZATION_THREADS_PER_TBLOCK * sizeof(uint4);
+        GPU_KERNEL_LAUNCH(gpujpeg_huffman_encoder_serialization_kernel, num_serialization_tblocks, SERIALIZATION_THREADS_PER_TBLOCK, shared_mem_size_serialization,
                                                        coder->stream,
             coder->d_segment,
             coder->segment_count,
@@ -1192,7 +1220,8 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
 
     // No atomic operations in CC 1.0 => run output size computation kernel to allocate the output buffer space
     if ( encoder->coder.cuda_cc_major == 1 && encoder->coder.cuda_cc_minor == 0 ) {
-        GPU_KERNEL_LAUNCH(gpujpeg_huffman_encoder_allocation_kernel, 1, 512, 0, coder->stream,
+        size_t shared_mem_size_allocation = 512 * sizeof(unsigned int);
+        GPU_KERNEL_LAUNCH(gpujpeg_huffman_encoder_allocation_kernel, 1, 512, shared_mem_size_allocation, coder->stream,
             coder->d_segment, coder->segment_count, huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count);
         gpujpeg_cuda_check_error("Huffman encoder output allocation failed", return -1);
     }
@@ -1200,7 +1229,8 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
     // Run output compaction kernel (one warp per segment)
     const dim3 compaction_thread(32, WARPS_NUM);
     const dim3 compaction_grid = gpujpeg_huffman_gpu_encoder_grid_size(gpujpeg_div_and_round_up(coder->segment_count, WARPS_NUM));
-    GPU_KERNEL_LAUNCH(gpujpeg_huffman_encoder_compaction_kernel, compaction_grid, compaction_thread, 0, coder->stream,
+    size_t shared_mem_size_compaction = WARPS_NUM * sizeof(uint4*);
+    GPU_KERNEL_LAUNCH(gpujpeg_huffman_encoder_compaction_kernel, compaction_grid, compaction_thread, shared_mem_size_compaction, coder->stream,
         coder->d_segment,
         coder->segment_count,
         coder->d_temp_huffman,
