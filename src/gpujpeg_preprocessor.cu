@@ -193,7 +193,7 @@ template<
     uint8_t s_comp4_samp_factor_h, uint8_t s_comp4_samp_factor_v
 >
 GPU_GLOBAL void
-gpujpeg_preprocessor_raw_to_comp_kernel(GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA struct gpujpeg_preprocessor_data data, const uint8_t* d_data_raw, int image_width_padding, int image_width, int image_height, uint32_t width_div_mul, uint32_t width_div_shift)
+gpujpeg_preprocessor_raw_to_comp_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA struct gpujpeg_preprocessor_data data, const uint8_t* d_data_raw, int image_width_padding, int image_width, int image_height, uint32_t width_div_mul, uint32_t width_div_shift)
 {
     int x  = GPU_THREAD_IDX_X;
     int gX = (GPU_BLOCK_IDX_Y * GPU_GRID_DIM_X + GPU_BLOCK_IDX_X) * GPU_BLOCK_DIM_X;
@@ -531,7 +531,7 @@ gpujpeg_preprocessor_encoder_copy_planar_data(struct gpujpeg_encoder * encoder)
 }
 
 static GPU_GLOBAL void
-vertical_flip_kernel(GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA uint32_t* data,
+vertical_flip_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA uint32_t* data,
                      int width, // image linesize/4
                      int height // image height in pixels
 )
@@ -564,7 +564,7 @@ gpujpeg_preprocessor_flip_lines(struct gpujpeg_coder* coder)
 
 template <enum gpujpeg_pixel_format pixel_format>
 GPU_GLOBAL void
-channel_remap_kernel(GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA uint8_t* data, int width, int pitch, int height, unsigned int byte_map)
+channel_remap_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA uint8_t* data, int width, int pitch, int height, unsigned int byte_map)
 {
     int x = GPU_BLOCK_IDX_X * GPU_BLOCK_DIM_X + GPU_THREAD_IDX_X; // column index
     int y = GPU_BLOCK_IDX_Y * GPU_BLOCK_DIM_Y + GPU_THREAD_IDX_Y; // row index

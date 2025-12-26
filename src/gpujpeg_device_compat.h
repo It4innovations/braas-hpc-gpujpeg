@@ -14,7 +14,7 @@
 #include <stddef.h>  // for size_t
 
 // Uncomment to enable kernel launch logging
-//#define GPUJPEG_DEBUG_KERNEL_LAUNCH
+#define GPUJPEG_DEBUG_KERNEL_LAUNCH
 
 // Determine which GPU backend to use
 // Check CMake-defined macros first, then fall back to compiler detection
@@ -171,6 +171,7 @@
 
 // For CUDA/HIP, shared memory parameter is not needed
 #define GPU_SHARED_MEM_PARAM /* empty */
+#define GPU_SHARED_MEM_ARG /* empty */
 #define GPU_SHARED_PTR(type, name, offset) /* empty - name already declared as GPU_SHARED array */
 
 
@@ -336,6 +337,7 @@
 
 // For CUDA/HIP, shared memory parameter is not needed
 #define GPU_SHARED_MEM_PARAM /* empty */
+#define GPU_SHARED_MEM_ARG /* empty */
 #define GPU_SHARED_PTR(type, name, offset) /* empty - name already declared as GPU_SHARED array */
 
 
@@ -430,6 +432,7 @@ inline uint32_t __byte_perm(uint32_t x, uint32_t y, uint32_t s) {
     return result;
 }
 
+#if 0
 // Sub-group (warp) collective functions for SYCL
 // __ballot_sync equivalent - returns bitmask of predicate across sub-group
 inline uint32_t __ballot_sync(uint32_t mask, bool predicate) {
@@ -437,6 +440,7 @@ inline uint32_t __ballot_sync(uint32_t mask, bool predicate) {
     sycl::vec<uint32_t, 1> ballot_result = sycl::group_ballot(sg, predicate);
     return ballot_result[0];
 }
+#endif
 
 // __clz (count leading zeros) - SYCL equivalent
 inline int __clz(uint32_t x) {
@@ -609,20 +613,18 @@ void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t smem, Kern
         
         // Allocate local memory if needed
         if (smem > 0) {
-            sycl::local_accessor<uint8_t, 1> local_mem(smem, cgh);
+            sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(smem), cgh);
             cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
                             [=](sycl::nd_item<3> item) {
-                kernel(item, local_mem.get_pointer());
+                kernel(item, local_mem);
             });
         } else {
             cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
                             [=](sycl::nd_item<3> item) {
-                kernel(item, nullptr);
+                kernel(item, sycl::local_accessor<uint8_t, 1>{});
             });
         }
     });
-
-    //q->wait();
 }
 
 // Macro for kernel launch - handle both cases with and without additional args
@@ -632,17 +634,20 @@ void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t smem, Kern
         dim3 _block = to_dim3(block); \
         GPUJPEG_KERNEL_LAUNCH_LOG(kernel, _grid, _block, smem, stream); \
         sycl_launch_kernel(stream, _grid, _block, smem, \
-            [=](sycl::nd_item<3> item, uint8_t* shared_mem_ptr) { \
-                kernel(item, shared_mem_ptr __VA_OPT__(,) __VA_ARGS__); \
+            [=](sycl::nd_item<3> item, sycl::local_accessor<uint8_t, 1> shared_mem_accessor) { \
+                kernel(item, shared_mem_accessor __VA_OPT__(,) __VA_ARGS__); \
             }); \
     } while(0)
 
 // Macro to declare shared memory parameter for SYCL kernels
-#define GPU_SHARED_MEM_PARAM , uint8_t* _sycl_shared_mem
+#define GPU_SHARED_MEM_PARAM , sycl::local_accessor<uint8_t, 1> _sycl_shared_mem
+
+// Macro to pass shared memory argument when calling device functions
+#define GPU_SHARED_MEM_ARG , _sycl_shared_mem
 
 // Macro to get typed pointer to shared memory for SYCL
 #define GPU_SHARED_PTR(type, name, offset) \
-    type* name = reinterpret_cast<type*>(_sycl_shared_mem + (offset))
+    type* name = reinterpret_cast<type*>(_sycl_shared_mem.get_multi_ptr<sycl::access::decorated::no>().get() + (offset))
 
 #endif // __cplusplus
 

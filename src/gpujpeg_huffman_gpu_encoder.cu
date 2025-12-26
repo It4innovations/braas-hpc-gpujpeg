@@ -337,7 +337,7 @@ gpujpeg_huffman_encoder_encode_kernel_warp(
 
     enum { extradata = (GPUJPEG_MAX_COMPONENT_COUNT + (sizeof(int) - 1)) / sizeof(int) };
 #ifdef GPUJPEG_USE_SYCL
-    uint4* s_out_all = reinterpret_cast<uint4*>(_sycl_shared_mem);
+    uint4* s_out_all = reinterpret_cast<uint4*>(_sycl_shared_mem.get_multi_ptr<sycl::access::decorated::no>().get());
 #else
     GPU_SHARED uint4 s_out_all[(64 + extradata) * WARPS_NUM];
 #endif
@@ -448,7 +448,7 @@ gpujpeg_huffman_encoder_serialization_kernel(
 #if defined(__CUDACC__) && __CUDA_ARCH__ >= 200 //|| defined(__HIP_DEVICE_COMPILE__) || defined(SYCL_DEVICE_ONLY)
     // Temp buffer for all threads of the threadblock
 #ifdef GPUJPEG_USE_SYCL
-    uint4* s_temp_all = reinterpret_cast<uint4*>(_sycl_shared_mem);
+    uint4* s_temp_all = reinterpret_cast<uint4*>(_sycl_shared_mem.get_multi_ptr<sycl::access::decorated::no>().get());
 #else
     GPU_SHARED uint4 s_temp_all[2 * SERIALIZATION_THREADS_PER_TBLOCK];
 #endif
@@ -547,7 +547,7 @@ gpujpeg_huffman_encoder_allocation_kernel (
 ) {
     // offsets of segments
 #ifdef GPUJPEG_USE_SYCL
-    unsigned int* s_segment_offsets = reinterpret_cast<unsigned int*>(_sycl_shared_mem);
+    unsigned int* s_segment_offsets = reinterpret_cast<unsigned int*>(_sycl_shared_mem.get_multi_ptr<sycl::access::decorated::no>().get());
 #else
     GPU_SHARED unsigned int s_segment_offsets[512];
 #endif
@@ -611,7 +611,7 @@ gpujpeg_huffman_encoder_compaction_kernel (
 
     // temp variables for all warps
 #ifdef GPUJPEG_USE_SYCL
-    uint4** volatile s_out_ptrs = reinterpret_cast<uint4** volatile>(_sycl_shared_mem);
+    uint4** volatile s_out_ptrs = reinterpret_cast<uint4** volatile>(_sycl_shared_mem.get_multi_ptr<sycl::access::decorated::no>().get());
 #else
     GPU_SHARED uint4* volatile s_out_ptrs[WARPS_NUM];
 #endif
@@ -776,7 +776,7 @@ gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PA
 
     // Load block to shared memory
 #ifdef GPUJPEG_USE_SYCL
-    int16_t* s_data = reinterpret_cast<int16_t*>(_sycl_shared_mem);
+    int16_t* s_data = reinterpret_cast<int16_t*>(_sycl_shared_mem.get_multi_ptr<sycl::access::decorated::no>().get());
 #else
     GPU_SHARED int16_t s_data[64 * THREAD_BLOCK_SIZE];
 #endif
@@ -932,7 +932,7 @@ gpujpeg_huffman_encoder_encode_kernel(
             }
 
             // Encode 8x8 block
-            if ( gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_ARG GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA put_value, put_bits, component_dc, block, data_compressed, d_table_dc, d_table_ac) != 0 )
+            if ( gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_ARG GPU_SHARED_MEM_ARG GPU_ITEM_COMMA put_value, put_bits, component_dc, block, data_compressed, d_table_dc, d_table_ac) != 0 )
                 break;
         }
     }
@@ -978,7 +978,7 @@ gpujpeg_huffman_encoder_encode_kernel(
                         }
 
                         // Encode 8x8 block
-                        gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_ARG GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA put_value, put_bits, component_dc, block, data_compressed, d_table_dc, d_table_ac);
+                        gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_ARG GPU_SHARED_MEM_ARG GPU_ITEM_COMMA put_value, put_bits, component_dc, block, data_compressed, d_table_dc, d_table_ac);
                     }
                 }
             }

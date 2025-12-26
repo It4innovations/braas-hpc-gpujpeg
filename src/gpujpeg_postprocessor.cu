@@ -189,7 +189,7 @@ template<
     uint8_t s_comp4_samp_factor_h, uint8_t s_comp4_samp_factor_v
 >
 GPU_GLOBAL void
-gpujpeg_preprocessor_comp_to_raw_kernel(GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA struct gpujpeg_preprocessor_data data, uint8_t* d_data_raw,
+gpujpeg_preprocessor_comp_to_raw_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA struct gpujpeg_preprocessor_data data, uint8_t* d_data_raw,
                                         int image_width_padding, int image_width, int image_height)
 {
     int x  = GPU_THREAD_IDX_X;

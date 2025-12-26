@@ -414,7 +414,7 @@ gpujpeg_huffman_decoder_decode_kernel(
     
     // Byte buffers in shared memory
 #ifdef GPUJPEG_USE_SYCL
-    uint4* s_byte_all = reinterpret_cast<uint4*>(_sycl_shared_mem);
+    uint4* s_byte_all = reinterpret_cast<uint4*>(_sycl_shared_mem.get_multi_ptr<sycl::access::decorated::no>().get());
 #else
     GPU_SHARED uint4 s_byte_all[2 * THREADS_PER_TBLOCK]; // 32 bytes per thread
 #endif
@@ -601,7 +601,7 @@ gpujpeg_huffman_gpu_decoder_table_setup(
  */
 GPU_GLOBAL void
 gpujpeg_huffman_decoder_table_kernel(
-                GPU_KERNEL_ITEM_PARAM GPU_ITEM_COMMA
+                GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA
                 struct gpujpeg_huffman_gpu_decoder huffman_gpu_decoder,
                 const struct gpujpeg_table_huffman_decoder* const d_table_y_dc,
                 const struct gpujpeg_table_huffman_decoder* const d_table_y_ac,

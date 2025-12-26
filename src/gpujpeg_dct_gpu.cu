@@ -496,7 +496,7 @@ gpujpeg_idct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMM
 #ifdef GPUJPEG_USE_SYCL
 	// For SYCL, get pointer to shared memory and cast to appropriate type
 	float (*data)[8][GPUJPEG_IDCT_BLOCK_Y][GPUJPEG_IDCT_BLOCK_X + 1] = 
-		reinterpret_cast<float (*)[8][GPUJPEG_IDCT_BLOCK_Y][GPUJPEG_IDCT_BLOCK_X + 1]>(_sycl_shared_mem);
+		reinterpret_cast<float (*)[8][GPUJPEG_IDCT_BLOCK_Y][GPUJPEG_IDCT_BLOCK_X + 1]>(_sycl_shared_mem.get_multi_ptr<sycl::access::decorated::no>().get());
 #else
 	GPU_SHARED float data[GPUJPEG_IDCT_BLOCK_Z][8][GPUJPEG_IDCT_BLOCK_Y][GPUJPEG_IDCT_BLOCK_X + 1];
 #endif
