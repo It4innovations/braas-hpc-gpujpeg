@@ -273,7 +273,7 @@ gpujpeg_dct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA
                     dct0, dct1, dct2, dct3, dct4, dct5, dct6, dct7);
 
     // apply quantization to the row of coefficients (quantization table is actually transposed in global memory for coalesced memory acceses)
-    #if defined(GPUJPEG_USE_CUDA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 200
+    #if (defined(GPUJPEG_USE_CUDA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 200) || defined(GPUJPEG_USE_HIP) || defined(GPUJPEG_USE_SYCL)
     const float * const quantization_row = gpujpeg_dct_gpu_quantization_table_const + dct_idx; // Quantization table in constant memory for CCs < 2.0
     #else
     const float * const quantization_row = quant_table + dct_idx; // Cached global memory reads for CCs >= 2.0 or HIP/SYCL
