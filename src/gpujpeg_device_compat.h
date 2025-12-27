@@ -381,6 +381,10 @@ namespace gpujpeg_sycl {
 #define half sycl::half
 #endif
 
+#ifndef __umulhi
+#define __umulhi sycl::mul_hi
+#endif
+
 #ifndef __float2half
 #define __float2half(f) static_cast<half>(f)
 #endif

@@ -48,11 +48,7 @@ elseif(GPUJPEG_USE_SYCL)
     endif()
     
     # Add SYCL flags to C++ compiler only (C files will use forward declarations)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl")
-
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O0")
-    endif()    
+    # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl")
     
 else()
     set(GPU_BACKEND "CUDA")

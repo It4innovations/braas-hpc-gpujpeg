@@ -42,16 +42,6 @@
 /** Value that means that sampling factor has dynamic value */
 #define GPUJPEG_DYNAMIC 16
 
-#ifdef GPUJPEG_USE_SYCL
-static inline uint32_t umulhi_u32(uint32_t a, uint32_t b) {
-    return static_cast<uint32_t>((static_cast<uint64_t>(a) * static_cast<uint64_t>(b)) >> 32);
-}
-
-static inline int32_t mulhi_s32(int32_t a, int32_t b) {
-    return static_cast<int32_t>((static_cast<int64_t>(a) * static_cast<int64_t>(b)) >> 32);
-}
-#endif
-
 /**
  * Prepares fixed divisor for dividing unsigned integers up to 2^31
  * with unsigned integers up to 2^31.
@@ -99,11 +89,7 @@ gpujpeg_const_div_prepare(const uint32_t d, uint32_t & pre_div_mul, uint32_t & p
  */
 GPU_DEVICE static uint32_t
 gpujpeg_const_div_divide(const uint32_t numerator, const uint32_t pre_div_mul, const uint32_t pre_div_shift) {
-#ifdef GPUJPEG_USE_SYCL
-    return pre_div_mul ? umulhi_u32(numerator, pre_div_mul) >> pre_div_shift : numerator;
-#else
     return pre_div_mul ? __umulhi(numerator, pre_div_mul) >> pre_div_shift : numerator;
-#endif
 }
 
 inline gpujpeg_sampling_factor_t
