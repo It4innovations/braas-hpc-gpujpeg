@@ -746,7 +746,7 @@ gpujpeg_encoder_set_option(struct gpujpeg_encoder* encoder, const char *opt, con
     return GPUJPEG_ERROR;
 }
 GPUJPEG_API void
-gpujpeg_encoder_print_options() {
+gpujpeg_encoder_print_options(void) {
     printf("\t" GPUJPEG_ENC_OPT_OUT "=[" GPUJPEG_ENC_OUT_VAL_PAGEABLE "|" GPUJPEG_ENC_OUT_VAL_PINNED
            "] - compressed data buffer allocation property\n");
     printf("\t" GPUJPEG_ENC_OPT_HDR "=[" GPUJPEG_ENC_HDR_VAL_JFIF "|" GPUJPEG_ENC_HDR_VAL_ADOBE

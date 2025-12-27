@@ -143,7 +143,7 @@ gpujpeg_decoder_create(gpuStream_t stream)
 }
 
 struct gpujpeg_decoder_init_parameters
-gpujpeg_decoder_default_init_parameters()
+gpujpeg_decoder_default_init_parameters(void)
 {
     return (struct gpujpeg_decoder_init_parameters){gpuStreamDefault, 0, false, false};
 }
@@ -459,7 +459,7 @@ gpujpeg_decoder_set_option(struct gpujpeg_decoder* decoder, const char *opt, con
 }
 
 GPUJPEG_API void
-gpujpeg_decoder_print_options()
+gpujpeg_decoder_print_options(void)
 {
     printf("\t" GPUJPEG_DEC_OPT_TGA_RLE_BOOL "=[" GPUJPEG_VAL_FALSE "|" GPUJPEG_VAL_TRUE
            "] - set decoder option (not) to output RLE TGA\n");

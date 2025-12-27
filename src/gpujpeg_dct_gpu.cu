@@ -266,7 +266,8 @@ gpujpeg_dct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA
     );
 
 #ifdef GPUJPEG_USE_SYCL
-    item.barrier(sycl::access::fence_space::local_space);
+    auto sg = item.get_sub_group();
+    sycl::group_barrier(sg);
 #endif
 
     // read coefficients back - each thread reads one row (no need to sync - only threads within same warp work on each block)

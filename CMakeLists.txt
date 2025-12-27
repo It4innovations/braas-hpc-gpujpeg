@@ -49,10 +49,18 @@ elseif(GPUJPEG_USE_SYCL)
     
     # Add SYCL flags to C++ compiler only (C files will use forward declarations)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl")
+
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O0")
+    endif()    
     
 else()
     set(GPU_BACKEND "CUDA")
     message(STATUS "Building GPUJPEG with CUDA backend (default)")
+
+    if (CMAKE_CUDA_ARCHITECTURES MATCHES OFF)
+        message(NOTICE "You may want to set CUDA architecture, suggested `-DCMAKE_CUDA_ARCHITECTURES=native`")
+    endif()    
 endif()
 
 if(WIN32)
@@ -61,10 +69,6 @@ if(WIN32)
     endif()
     string(REPLACE "\\" "/" CMAKE_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX})
     add_definitions(-D_CRT_SECURE_NO_WARNINGS)
-endif()
-
-if (CMAKE_CUDA_ARCHITECTURES MATCHES OFF)
-    message(NOTICE "You may want to set CUDA architecture, suggested `-DCMAKE_CUDA_ARCHITECTURES=native`")
 endif()
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)

@@ -11,6 +11,7 @@
 #include <map>
 #include <chrono>
 #include <cstring>
+#include <iostream>
 
 namespace gpujpeg_sycl {
     sycl::queue* default_queue = nullptr;
@@ -21,6 +22,26 @@ namespace gpujpeg_sycl {
     };
     
     std::map<gpuEvent_t, EventData> event_map;
+    
+    // Define async exception handler as a function (can be used as sycl::async_handler)
+    void async_handler_impl(sycl::exception_list exceptions) {
+        for (const auto& ex_ptr : exceptions) {
+            try {
+                std::rethrow_exception(ex_ptr);
+            } catch (const sycl::exception& ex) {
+                std::cerr << "\n[ASYNC SYCL EXCEPTION]\n"
+                          << "  what(): " << ex.what() << "\n"
+                          << "  code(): " << ex.code().value()
+                          << std::endl;
+            } catch (const std::exception& ex) {
+                std::cerr << "\n[ASYNC std::exception]\n"
+                          << ex.what() << std::endl;
+            }
+        }
+    }
+    
+    // Export as sycl::async_handler
+    sycl::async_handler async_handler = async_handler_impl;
 }
 
 extern "C" {
@@ -28,7 +49,7 @@ extern "C" {
 gpuError_t gpuMalloc(void** ptr, size_t size) {
     try {
         if (!gpujpeg_sycl::default_queue) {
-            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v);
+            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
         }
         *ptr = sycl::malloc_device(size, *gpujpeg_sycl::default_queue);
         return *ptr ? gpuSuccess : -1;
@@ -40,7 +61,7 @@ gpuError_t gpuMalloc(void** ptr, size_t size) {
 gpuError_t gpuMallocHost(void** ptr, size_t size) {
     try {
         if (!gpujpeg_sycl::default_queue) {
-            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v);
+            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
         }
         *ptr = sycl::malloc_host(size, *gpujpeg_sycl::default_queue);
         return *ptr ? gpuSuccess : -1;
@@ -74,7 +95,7 @@ gpuError_t gpuFreeHost(void* ptr) {
 gpuError_t gpuMemcpy(void* dst, const void* src, size_t count, int kind) {
     try {
         if (!gpujpeg_sycl::default_queue) {
-            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v);
+            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
         }
         gpujpeg_sycl::default_queue->memcpy(dst, src, count).wait();
         return gpuSuccess;
@@ -86,7 +107,7 @@ gpuError_t gpuMemcpy(void* dst, const void* src, size_t count, int kind) {
 gpuError_t gpuMemset(void* ptr, int value, size_t count) {
     try {
         if (!gpujpeg_sycl::default_queue) {
-            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v);
+            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
         }
         gpujpeg_sycl::default_queue->memset(ptr, value, count).wait();
         return gpuSuccess;
@@ -160,7 +181,7 @@ gpuError_t gpuMemcpyToSymbol(const void* symbol, const void* src, size_t count,
                              size_t offset, int kind) {
     try {
         if (!gpujpeg_sycl::default_queue) {
-            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v);
+            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
         }
         
         // In SYCL, "symbols" are just pointers to device memory
@@ -290,7 +311,7 @@ gpuError_t gpuSetDevice(int device) {
         if (gpujpeg_sycl::default_queue) {
             delete gpujpeg_sycl::default_queue;
         }
-        gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v);
+        gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
         return gpuSuccess;
     } catch (...) {
         return -1;
@@ -373,7 +394,25 @@ gpuError_t gpuGetDeviceProperties(gpuDeviceProp* prop, int device) {
 
 gpuError_t gpuGetLastError(void) {
     // SYCL uses exceptions, not error codes
-    return gpuSuccess;
+    // We need to wait on the queue to catch any async errors
+    try {
+        if (gpujpeg_sycl::default_queue) {
+            gpujpeg_sycl::default_queue->wait_and_throw();
+        }
+        return gpuSuccess;
+    } catch (const sycl::exception& e) {
+        std::cerr << "\n[SYCL ERROR in gpuGetLastError]\n"
+                  << "  what(): " << e.what() << "\n"
+                  << "  code(): " << e.code().value() << std::endl;
+        return -1;
+    } catch (const std::exception& e) {
+        std::cerr << "\n[ERROR in gpuGetLastError]\n"
+                  << e.what() << std::endl;
+        return -1;
+    } catch (...) {
+        std::cerr << "\n[UNKNOWN ERROR in gpuGetLastError]" << std::endl;
+        return -1;
+    }
 }
 
 gpuError_t gpuDeviceReset(void) {

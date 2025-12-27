@@ -286,7 +286,7 @@ gpujpeg_set_default_parameters(struct gpujpeg_parameters* param)
 }
 
 struct gpujpeg_parameters
-gpujpeg_default_parameters()
+gpujpeg_default_parameters(void)
 {
     struct gpujpeg_parameters ret;
     gpujpeg_set_default_parameters(&ret);
@@ -358,7 +358,7 @@ gpujpeg_image_set_default_parameters(struct gpujpeg_image_parameters* param)
 }
 
 struct gpujpeg_image_parameters
-gpujpeg_default_image_parameters()
+gpujpeg_default_image_parameters(void)
 {
     struct gpujpeg_image_parameters ret;
     gpujpeg_image_set_default_parameters(&ret);
@@ -1783,6 +1783,7 @@ const char* gpujpeg_get_error_string(gpuError_t error) {
 #if defined(GPUJPEG_USE_HIP)
     return hipGetErrorString(error);
 #elif defined(GPUJPEG_USE_SYCL)
+    (void)error; // Suppress unused parameter warning
     return "SYCL error";
 #else
     return gpuGetErrorString(error);

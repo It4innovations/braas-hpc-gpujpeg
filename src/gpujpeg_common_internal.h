@@ -127,18 +127,12 @@ enum {
 extern const char *gj_fg_red;
 extern const char *gj_fg_yellow;
 extern const char *gj_term_reset;
-// check __VA_OPT__ presence
-#if __STDC_VERSION__ >= 202311L || __cplusplus >= 202002L || __GNUC__ >= 8 || \
-    __clang_major__ >= 9
-        #define ERROR_MSG(fmt, ...)                                                                                    \
-            (void)fprintf(stderr, "%s[GPUJPEG] [Error] " fmt "%s", gj_fg_red __VA_OPT__(, ) __VA_ARGS__, gj_term_reset)
-        #define WARN_MSG(fmt, ...)                                                                                     \
-            (void)fprintf(stderr, "%s[GPUJPEG] [Warning] " fmt "%s", gj_fg_yellow __VA_OPT__(, ) __VA_ARGS__,          \
-                          gj_term_reset)
-#else
-#define ERROR_MSG(fmt, ...) (void)fprintf(stderr, "[GPUJPEG] [Error] " fmt, ##__VA_ARGS__)
-#define WARN_MSG(fmt, ...) (void)fprintf(stderr, "[GPUJPEG] [Warning] " fmt, ##__VA_ARGS__)
-#endif
+// Pragma to suppress GNU extension warnings for these specific macros
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
+#define ERROR_MSG(fmt, ...) (void)fprintf(stderr, "%s[GPUJPEG] [Error] " fmt "%s", gj_fg_red, ##__VA_ARGS__, gj_term_reset)
+#define WARN_MSG(fmt, ...) (void)fprintf(stderr, "%s[GPUJPEG] [Warning] " fmt "%s", gj_fg_yellow, ##__VA_ARGS__, gj_term_reset)
+#pragma clang diagnostic pop
 #define VERBOSE_MSG(log_level, ...)                                                                                    \
     if ( log_level >= GPUJPEG_LL_VERBOSE )                                                                             \
         (void)fprintf(stderr, "[GPUJPEG] [Verbose] " __VA_ARGS__)
