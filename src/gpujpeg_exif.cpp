@@ -125,23 +125,23 @@ const struct exif_tiff_tag_info_t {
     unsigned count;
     const char *name;
 } exif_tiff_tag_info[] = {
-    [TAG_NONE]                = {0,      (enum exif_tag_type)0,  0,  "Unknown"         },
-    [ETIFF_ORIENTATION]       = {0x112,  ET_SHORT,    1,  "Orientation"     },
-    [ETIFF_XRESOLUTION]       = {0x11A,  ET_RATIONAL, 1,  "XResolution"     },
-    [ETIFF_YRESOLUTION]       = {0x11B,  ET_RATIONAL, 1,  "YResolution"     },
-    [ETIFF_RESOLUTION_UNIT]   = {0x128,  ET_SHORT,    1,  "ResolutionUnit"  },
-    [ETIFF_SOFTWARE]          = {0x131,  ET_ASCII,    0,  "Sofware"         },
-    [ETIFF_DATE_TIME]         = {0x132,  ET_ASCII,    20, "DateTime"        },
-    [ETIFF_WHITE_POINT]       = {0x13E,  ET_RATIONAL, 2,  "WhitePoint"      },
-    [ETIFF_YCBCR_POSITIONING] = {0x213,  ET_SHORT,    1,  "YCbCrPositioning"},
-    [ETIFF_EXIF_IFD_POINTER]  = {0x8769, ET_LONG,     1,  "Exif IFD Pointer"},
+    /* [TAG_NONE] */                {0,      (enum exif_tag_type)0,  0,  "Unknown"         },
+    /* [ETIFF_ORIENTATION] */       {0x112,  ET_SHORT,    1,  "Orientation"     },
+    /* [ETIFF_XRESOLUTION] */       {0x11A,  ET_RATIONAL, 1,  "XResolution"     },
+    /* [ETIFF_YRESOLUTION] */       {0x11B,  ET_RATIONAL, 1,  "YResolution"     },
+    /* [ETIFF_RESOLUTION_UNIT] */   {0x128,  ET_SHORT,    1,  "ResolutionUnit"  },
+    /* [ETIFF_SOFTWARE] */          {0x131,  ET_ASCII,    0,  "Sofware"         },
+    /* [ETIFF_DATE_TIME] */         {0x132,  ET_ASCII,    20, "DateTime"        },
+    /* [ETIFF_WHITE_POINT] */       {0x13E,  ET_RATIONAL, 2,  "WhitePoint"      },
+    /* [ETIFF_YCBCR_POSITIONING] */ {0x213,  ET_SHORT,    1,  "YCbCrPositioning"},
+    /* [ETIFF_EXIF_IFD_POINTER] */  {0x8769, ET_LONG,     1,  "Exif IFD Pointer"},
     // Exif SubIFD
-    [EEXIF_EXIF_VERSION]             = {0x9000, ET_UNDEFINED, 4, "ExifVersion"           },
-    [EEXIF_COMPONENTS_CONFIGURATION] = {0x9101, ET_UNDEFINED, 4, "ComponentConfiguration"},
-    [EEXIF_FLASHPIX_VERSION]         = {0xA000, ET_UNDEFINED, 4, "FlashPixVersion"       },
-    [EEXIF_COLOR_SPACE]              = {0xA001, ET_SHORT,     1, "ColorSpace"            },
-    [EEXIF_PIXEL_X_DIMENSION]        = {0xA002, ET_SHORT,     1, "PixelXDimension"       }, // type can be also LONG
-    [EEXIF_PIXEL_Y_DIMENSION]        = {0xA003, ET_SHORT,     1, "PixelYDimension"       }, // ditto
+    /* [EEXIF_EXIF_VERSION] */             {0x9000, ET_UNDEFINED, 4, "ExifVersion"           },
+    /* [EEXIF_COMPONENTS_CONFIGURATION] */ {0x9101, ET_UNDEFINED, 4, "ComponentConfiguration"},
+    /* [EEXIF_FLASHPIX_VERSION] */         {0xA000, ET_UNDEFINED, 4, "FlashPixVersion"       },
+    /* [EEXIF_COLOR_SPACE] */              {0xA001, ET_SHORT,     1, "ColorSpace"            },
+    /* [EEXIF_PIXEL_X_DIMENSION] */        {0xA002, ET_SHORT,     1, "PixelXDimension"       }, // type can be also LONG
+    /* [EEXIF_PIXEL_Y_DIMENSION] */        {0xA003, ET_SHORT,     1, "PixelYDimension"       }, // ditto
 };
 
 // misc constants
