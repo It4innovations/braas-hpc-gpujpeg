@@ -150,16 +150,16 @@ message(STATUS "Configured options: ${COMPILED_OPTIONS}")
 # GPUJPEG library
 file(GLOB H_FILES libgpujpeg/*.h ${CMAKE_CURRENT_BINARY_DIR}/libgpujpeg/gpujpeg_version.h)
 
-# Common source files (.c files)
-file(GLOB GPUJPEG_COMMON_SOURCES src/*.c)
-list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.c")
-list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/getopt.c")
+# Common source files (.cpp files)
+file(GLOB GPUJPEG_COMMON_SOURCES src/*.cpp)
+list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
+list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/getopt.cpp")
 
 # Add utility source files
 list(APPEND GPUJPEG_COMMON_SOURCES
-    src/utils/image_delegate.c
-    src/utils/pam.c
-    src/utils/y4m.c
+    src/utils/image_delegate.cpp
+    src/utils/pam.cpp
+    src/utils/y4m.cpp
 )
 
 # GPU kernel sources - different per backend
@@ -340,7 +340,7 @@ install(EXPORT GPUJPEGTargets
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/GPUJPEGConfig.cmake ${CMAKE_CURRENT_BINARY_DIR}/GPUJPEGConfigVersion.cmake
     DESTINATION lib/cmake/GPUJPEG)
 
-file(GLOB_RECURSE ALL_SOURCES *.c *.cu *.cuh *.h *.hpp)
+file(GLOB_RECURSE ALL_SOURCES *.cpp *.cu *.cuh *.h *.hpp)
 add_custom_target(cscope cscope -bv ${ALL_SOURCES})
 add_custom_target(ctags ctags ${ALL_SOURCES})
 add_custom_target(universal-ctags ctags-universal ${ALL_SOURCES})

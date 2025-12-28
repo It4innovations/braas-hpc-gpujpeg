@@ -444,7 +444,9 @@ gpujpeg_image_get_file_format(const char* filename)
     return GPUJPEG_IMAGE_FILE_UNKNOWN;
 }
 
-static enum { FF_CS_NONE, FF_CS_RGB, FF_CS_YCBCR } get_file_type_cs(enum gpujpeg_image_file_format format)
+enum file_type_cs { FF_CS_NONE, FF_CS_RGB, FF_CS_YCBCR };
+
+static enum file_type_cs get_file_type_cs(enum gpujpeg_image_file_format format)
 {
     switch ( format ) {
     case GPUJPEG_IMAGE_FILE_UNKNOWN:
@@ -962,7 +964,7 @@ gpujpeg_coder_init_image(struct gpujpeg_coder * coder, const struct gpujpeg_para
             free(coder->data_compressed);
             coder->data_compressed = NULL;
         }
-        coder->data_compressed = malloc(max_compressed_data_size);
+        coder->data_compressed = (uint8_t*)malloc(max_compressed_data_size);
         coder->data_compressed_pinned_sz = max_compressed_data_size / (GPUJPEG_MAX_BLOCK_COMPRESSED_SIZE
           / GPUJPEG_BLOCK_SQUARED_SIZE) / 3; // WxHxCH/3 bytes
         gpuHostRegister(coder->data_compressed, coder->data_compressed_pinned_sz, gpuHostRegisterDefault);

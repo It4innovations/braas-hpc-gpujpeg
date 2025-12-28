@@ -83,6 +83,10 @@ gpujpeg_cuda_realloc_sized_host(void* ptr, int oldsz, int newsz);
 #define STBI_REALLOC_SIZED gpujpeg_cuda_realloc_sized_host
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
+// Undefine 'half' macro to avoid conflicts with SYCL half type in stb_image.h
+#ifdef half
+#undef half
+#endif
 #include "stb_image.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -105,7 +109,7 @@ gpujpeg_cuda_free_host(void* ptr)
 static void*
 gpujpeg_cuda_realloc_sized_host(void* ptr, int oldsz, int newsz)
 {
-    char *nptr = gpujpeg_cuda_malloc_host(newsz);
+    char *nptr = (char*)gpujpeg_cuda_malloc_host(newsz);
     if (nptr == NULL) {
         return NULL;
     }
@@ -389,7 +393,7 @@ tst_image_parse_filename(const char* filename, struct gpujpeg_image_parameters* 
     assert(ext_dot != NULL && strlen(ext_dot + 1) == 3); // 3 char ext (.tst)
     *ext_dot = '\0';
 
-    char* endptr = "";
+    char* endptr = fname;
     param_image->width = (int)strtoul(fname, &endptr, 10);
     if ( *endptr != 'x' ) {
         tst_usage();
@@ -459,7 +463,7 @@ tst_image_probe_delegate(const char* filename, enum gpujpeg_image_file_format fo
 {
     (void)format;
     (void)file_exists;
-    struct tst_image_parameters unused = {0};
+    struct tst_image_parameters unused = {(enum tst_pattern)0};
 
     return tst_image_parse_filename(filename, param_image, &unused);
 }
@@ -602,7 +606,7 @@ tst_image_load_delegate(const char* filename, size_t* image_size, void** image_d
             break;
         }
         case TST_NOISE: {
-            unsigned char* data = *image_data;
+            unsigned char* data = (unsigned char*)*image_data;
 #ifndef WIN32
             srand(time(NULL));
 #endif

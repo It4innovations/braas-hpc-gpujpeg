@@ -141,7 +141,7 @@ gpujpeg_reader_read_marker(uint8_t** image, const uint8_t* image_end, int verbos
         return -1;
     }
     int marker = gpujpeg_reader_read_byte(*image);
-    DEBUG2_MSG(verbose, "Read marker %s\n", gpujpeg_marker_name(marker));
+    DEBUG2_MSG(verbose, "Read marker %s\n", gpujpeg_marker_name((enum gpujpeg_marker_code)marker));
     return marker;
 }
 
@@ -364,7 +364,7 @@ gpujpeg_reader_read_app13(struct gpujpeg_reader* reader, uint8_t** image, const 
         return -1;
     }
 
-    char *ignored_hdrs[] = { "Adobe_Photoshop2.5", "Photoshop 3.0", "Adobe_CM" };
+    const char *ignored_hdrs[] = { "Adobe_Photoshop2.5", "Photoshop 3.0", "Adobe_CM" };
     for (size_t i = 0; i < sizeof ignored_hdrs / sizeof ignored_hdrs[0]; ++i) {
         if ((size_t) length >= 2 + sizeof ignored_hdrs[i] - 1 && memcmp((char *) *image, ignored_hdrs[i], sizeof ignored_hdrs[i] - 1) == 0) {
             if ( reader->param.verbose ) {
@@ -1054,7 +1054,7 @@ gpujpeg_reader_read_scan_content_by_parsing(struct gpujpeg_decoder* decoder, str
     int result = -1;
     uint8_t previous_marker = GPUJPEG_MARKER_RST0 - 1;
     do {
-        uint8_t *ret = memchr(*image, 0xFF, image_end - *image);
+        uint8_t *ret = (uint8_t*)memchr(*image, 0xFF, image_end - *image);
         if (ret == NULL || ret == image_end - 1) {
             data_compressed_offset += image_end - *image;
             *image = (uint8_t *) image_end;
@@ -1078,7 +1078,7 @@ gpujpeg_reader_read_scan_content_by_parsing(struct gpujpeg_decoder* decoder, str
                 int found_expected_marker = 0;
                 size_t skip_count = 0;
                 while ( *image < image_end ) {
-                    uint8_t *ret = memchr(*image, 0xFF, image_end - *image);
+                    uint8_t *ret = (uint8_t*)memchr(*image, 0xFF, image_end - *image);
                     if (ret == NULL || ret == image_end - 1) {
                         break;
                     }

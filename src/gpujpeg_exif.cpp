@@ -122,7 +122,7 @@ const struct exif_tiff_tag_info_t {
     unsigned count;
     const char *name;
 } exif_tiff_tag_info[] = {
-    [TAG_NONE]                = {0,      0,           0,  "Unknown"         },
+    [TAG_NONE]                = {0,      (enum exif_tag_type)0,  0,  "Unknown"         },
     [ETIFF_ORIENTATION]       = {0x112,  ET_SHORT,    1,  "Orientation"     },
     [ETIFF_XRESOLUTION]       = {0x11A,  ET_RATIONAL, 1,  "XResolution"     },
     [ETIFF_YRESOLUTION]       = {0x11B,  ET_RATIONAL, 1,  "YResolution"     },
@@ -253,20 +253,24 @@ struct custom_tag_value
     size_t val_count;
 };
 enum { CT_TIFF, CT_EXIF, CT_NUM };
+
+/// custom exif tags structure
+struct custom_exif_tags
+{
+    struct custom_tag_value *vals;
+    size_t count;
+};
+
 /// custom exif tags given by user
 struct gpujpeg_exif_tags {
-    struct custom_exif_tags
-    {
-        struct custom_tag_value *vals;
-        size_t count;
-    } tags[CT_NUM];
+    struct custom_exif_tags tags[CT_NUM];
 };
 
 static int
 ifd_sort(const void* a, const void* b)
 {
-    const uint8_t* aa = a;
-    const uint8_t *bb = b;
+    const uint8_t* aa = (const uint8_t*)a;
+    const uint8_t *bb = (const uint8_t*)b;
     int a_tag_id = aa[0] << 8 | aa[1];
     int b_tag_id = bb[0] << 8 | bb[1];
     return a_tag_id - b_tag_id;
@@ -291,8 +295,10 @@ gpujpeg_write_ifd(struct gpujpeg_writer* writer, const uint8_t* start, size_t co
     for ( unsigned i = 0; i < count; ++i ) {
         const struct tag_value* info = &tags[i];
         union value_u value = info->value;
+        static uint32_t exif_offset_value;
         if ( info->tag == ETIFF_EXIF_IFD_POINTER ) {
-            value.uvalue = (uint32_t[]) {end - start};
+            exif_offset_value = static_cast<uint32_t>(end - start);
+            value.uvalue = &exif_offset_value;
         }
         const struct exif_tiff_tag_info_t* t = &exif_tiff_tag_info[info->tag];
         // assert(t->id >= last_tag_id);
@@ -315,8 +321,8 @@ gpujpeg_write_ifd(struct gpujpeg_writer* writer, const uint8_t* start, size_t co
  * from tags remove the items that are overriden by custom_tags
  */
 static size_t
-remove_overriden(size_t count, struct tag_value tags[STAT_ARR_DCL(count)],
-                 const struct custom_exif_tags custom_tags[STAT_ARR_DCL(1)])
+remove_overriden(size_t count, struct tag_value tags[],
+                 const struct custom_exif_tags* custom_tags)
 {
     for ( unsigned i = 0; i < custom_tags->count; ++i ) {
         for ( unsigned j = 0; j < count; ++j ) {
@@ -351,14 +357,18 @@ gpujpeg_write_0th(struct gpujpeg_writer* writer, const uint8_t* start, const str
     struct tm buf;
     (void) strftime(date_time, sizeof date_time, "%Y:%m:%d %H:%M:%S", localtime_s(&now, &buf));
     uint32_t orientation = ETIFF_ORIENTATION_VERTICAL;
+    static uint32_t xres_vals[] = {DPI_DEFAULT, 1};
+    static uint32_t yres_vals[] = {DPI_DEFAULT, 1};
+    static uint32_t res_unit_val = ETIFF_INCHES;
+    static uint32_t ycbcr_val = ETIFF_CENTER;
     struct tag_value tags[] = {
-        {ETIFF_ORIENTATION,       {.uvalue = &orientation}                },
-        {ETIFF_XRESOLUTION,       {.uvalue = (uint32_t[]){DPI_DEFAULT, 1}}},
-        {ETIFF_YRESOLUTION,       {.uvalue = (uint32_t[]){DPI_DEFAULT, 1}}},
-        {ETIFF_RESOLUTION_UNIT,   {.uvalue = (uint32_t[]){ETIFF_INCHES}}  },
-        {ETIFF_DATE_TIME ,        {.csvalue = date_time}                  },
-        {ETIFF_YCBCR_POSITIONING, {.uvalue = (uint32_t[]){ETIFF_CENTER}}  },
-        {ETIFF_EXIF_IFD_POINTER,  {0}                                }, // value will be set later
+        {ETIFF_ORIENTATION,       {.uvalue = &orientation}     },
+        {ETIFF_XRESOLUTION,       {.uvalue = xres_vals}        },
+        {ETIFF_YRESOLUTION,       {.uvalue = yres_vals}        },
+        {ETIFF_RESOLUTION_UNIT,   {.uvalue = &res_unit_val}    },
+        {ETIFF_DATE_TIME ,        {.csvalue = date_time}       },
+        {ETIFF_YCBCR_POSITIONING, {.uvalue = &ycbcr_val}       },
+        {ETIFF_EXIF_IFD_POINTER,  {0}                          }, // value will be set later
     };
     if ( metadata->vals[GPUJPEG_METADATA_ORIENTATION].set ) {
         orientation = get_exif_orientation(&metadata->vals[GPUJPEG_METADATA_ORIENTATION].orient);
@@ -373,13 +383,16 @@ gpujpeg_write_exif_ifd(struct gpujpeg_writer* writer, const uint8_t* start,
                        const struct gpujpeg_image_parameters* param_image,
                        const struct custom_exif_tags* custom_tags)
 {
+    static uint32_t color_space_val = ETIFF_SRGB;
+    uint32_t pixel_x = static_cast<uint32_t>(param_image->width);
+    uint32_t pixel_y = static_cast<uint32_t>(param_image->height);
     struct tag_value tags[] = {
-        {EEXIF_EXIF_VERSION,             {.csvalue = "0230"}                                        }, // 2.30
-        {EEXIF_COMPONENTS_CONFIGURATION, {.csvalue = "\1\2\3\0"}                                    }, // YCbCr
-        {EEXIF_FLASHPIX_VERSION,         {.csvalue = "0100"}                                        },
-        {EEXIF_COLOR_SPACE,              {.uvalue = (uint32_t[]){ETIFF_SRGB}}                       },
-        {EEXIF_PIXEL_X_DIMENSION,        {.uvalue = (uint32_t[]){param_image->width}} },
-        {EEXIF_PIXEL_Y_DIMENSION,        {.uvalue = (uint32_t[]){param_image->height}}},
+        {EEXIF_EXIF_VERSION,             {.csvalue = "0230"}           }, // 2.30
+        {EEXIF_COMPONENTS_CONFIGURATION, {.csvalue = "\1\2\3\0"}       }, // YCbCr
+        {EEXIF_FLASHPIX_VERSION,         {.csvalue = "0100"}           },
+        {EEXIF_COLOR_SPACE,              {.uvalue = &color_space_val}  },
+        {EEXIF_PIXEL_X_DIMENSION,        {.uvalue = &pixel_x}          },
+        {EEXIF_PIXEL_Y_DIMENSION,        {.uvalue = &pixel_y}          },
     };
     size_t tag_count = ARR_SIZE(tags);
     tag_count = remove_overriden(tag_count, tags, custom_tags);
@@ -421,8 +434,9 @@ gpujpeg_writer_write_exif(struct gpujpeg_writer* writer, const struct gpujpeg_pa
     gpujpeg_writer_emit_2byte(writer, TIFF_HDR_TAG); // TIFF header
     gpujpeg_writer_emit_4byte(writer, 0x08); // IFD offset - follows immediately
 
-    const struct custom_exif_tags* tiff_tags = &(const struct custom_exif_tags){.count = 0};
-    const struct custom_exif_tags* exif_tags = &(const struct custom_exif_tags){.count = 0};
+    static struct custom_exif_tags empty_tags = {NULL, 0};
+    const struct custom_exif_tags* tiff_tags = &empty_tags;
+    const struct custom_exif_tags* exif_tags = &empty_tags;
     if ( custom_tags != NULL ) {
         tiff_tags = &custom_tags->tags[CT_TIFF];
         exif_tags = &custom_tags->tags[CT_EXIF];
@@ -452,12 +466,12 @@ get_numeric_tag_type(char** endptr, long* tag_id, enum exif_tag_type* type)
         }
         size_t len = strlen(exif_tag_type_info[i].name);
         if ( strncasecmp(*endptr, exif_tag_type_info[i].name, len) == 0 ) {
-            *type = i;
+            *type = (enum exif_tag_type)i;
             *endptr += len;
             break;
         }
     }
-    if ( type == ET_NONE ) {
+    if ( *type == ET_NONE ) {
         ERROR_MSG("Error parsing Exif tag type!\n");
         return false;
     }
@@ -540,7 +554,7 @@ gpujpeg_exif_add_tag(struct gpujpeg_exif_tags** exif_tags, const char* cfg)
             if ( (exif_tag_type_info[type].type_flags & T_NUMERIC) != 0U ) {
                 unsigned long long val = strtoull(endptr, &endptr, 0);
                 val_count += 1;
-                uint32_t* val_a = realloc(val_alloc, val_count * sizeof *val_a);
+                uint32_t* val_a = (uint32_t*)realloc(val_alloc, val_count * sizeof *val_a);
                 val_a[val_count - 1] = val;
                 val_alloc = val_a;
             }
@@ -552,7 +566,7 @@ gpujpeg_exif_add_tag(struct gpujpeg_exif_tags** exif_tags, const char* cfg)
                 endptr += 1;
                 unsigned long long den = strtoull(endptr, &endptr, 0);
                 val_count += 1;
-                uint32_t* val_a = realloc(val_alloc, val_count * 2 * sizeof *val_a);
+                uint32_t* val_a = (uint32_t*)realloc(val_alloc, val_count * 2 * sizeof *val_a);
                 val_a[2 * (val_count - 1)] = num;
                 val_a[(2 * (val_count - 1)) + 1] = den;
                 val_alloc = val_a;
@@ -567,17 +581,17 @@ gpujpeg_exif_add_tag(struct gpujpeg_exif_tags** exif_tags, const char* cfg)
     }
 
     if (*exif_tags == NULL) {
-        *exif_tags = calloc(1, sizeof **exif_tags);
+        *exif_tags = (struct gpujpeg_exif_tags*)calloc(1, sizeof **exif_tags);
     }
 
     int table_idx =  tag_id < EEXIF_FIRST ? CT_TIFF : CT_EXIF;
     size_t new_size = (*exif_tags)->tags[table_idx].count += 1;
-    (*exif_tags)->tags[table_idx].vals = realloc((*exif_tags)->tags[table_idx].vals,
+    (*exif_tags)->tags[table_idx].vals = (struct custom_tag_value*)realloc((*exif_tags)->tags[table_idx].vals,
             new_size * sizeof (*exif_tags)->tags[table_idx].vals[0]);
     (*exif_tags)->tags[table_idx].vals[new_size - 1].tag_id = tag_id;
     (*exif_tags)->tags[table_idx].vals[new_size - 1].type = type;
     assert(val_alloc != NULL);
-    (*exif_tags)->tags[table_idx].vals[new_size - 1].value.uvalue = val_alloc;
+    (*exif_tags)->tags[table_idx].vals[new_size - 1].value.uvalue = (const uint32_t*)val_alloc;
     (*exif_tags)->tags[table_idx].vals[new_size - 1].val_count = val_count;
 
     return true;
@@ -606,7 +620,7 @@ get_tag_from_id(uint16_t tag_id)
 {
     for ( unsigned i = TAG_NONE + 1; i < NUM_TAGS; ++i ) {
         if ( exif_tiff_tag_info[i].id == tag_id ) {
-            return i;
+            return (enum exif_tiff_tag)i;
         }
     }
     return TAG_NONE;

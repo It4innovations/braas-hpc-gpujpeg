@@ -22,7 +22,7 @@ pkgconfig_DATA = libgpujpeg.pc
 
 library_include_HEADERS = $(srcdir)/libgpujpeg/*.h libgpujpeg/gpujpeg_version.h
 
-gpujpegtool_SOURCES = src/main.c dummy.cc
+gpujpegtool_SOURCES = src/main.cpp dummy.cc
 gpujpegtool_CFLAGS = -std=c11 @COMMON_FLAGS@
 gpujpegtool_LDFLAGS = @GPUJPEG_LDFLAGS@
 
@@ -30,18 +30,18 @@ dummy.cc:
 	echo 'static void dummy();' > $@
 
 # gpu jpeg library sources
-libgpujpeg_SRC = src/gpujpeg_common.c \
-	     	src/gpujpeg_dct_cpu.c \
-	     	src/gpujpeg_decoder.c \
-	     	src/gpujpeg_encoder.c \
-	     	src/gpujpeg_huffman_cpu_decoder.c \
-	     	src/gpujpeg_huffman_cpu_encoder.c \
-	     	src/gpujpeg_reader.c \
-	     	src/gpujpeg_table.c \
-	     	src/gpujpeg_writer.c \
-	     	src/utils/image_delegate.c \
-	     	src/utils/pam.c \
-	     	src/utils/y4m.c
+libgpujpeg_SRC = src/gpujpeg_common.cpp \
+	     	src/gpujpeg_dct_cpu.cpp \
+	     	src/gpujpeg_decoder.cpp \
+	     	src/gpujpeg_encoder.cpp \
+	     	src/gpujpeg_huffman_cpu_decoder.cpp \
+	     	src/gpujpeg_huffman_cpu_encoder.cpp \
+	     	src/gpujpeg_reader.cpp \
+	     	src/gpujpeg_table.cpp \
+	     	src/gpujpeg_writer.cpp \
+	     	src/utils/image_delegate.cpp \
+	     	src/utils/pam.cpp \
+	     	src/utils/y4m.cpp
 
 libgpujpeg_DEP = @LIBGPUJPEG_CUDA_OBJS@
 
@@ -121,9 +121,9 @@ clean-local:
 	$(RM) dummy.cc dummy.o
 
 cscope:
-	cscope -bv $(srcdir)/src/*cu $(srcdir)/src/*c $(srcdir)/libgpujpeg/*h
+	cscope -bv $(srcdir)/src/*cu $(srcdir)/src/*cpp $(srcdir)/libgpujpeg/*h
 
 universal-ctags:
-	ctags-universal $$(find $(srcdir)/src $(srcdir)/test \( -name '*.c' -o -name '*.cpp' -o -name '*.cu' -o -name '*.h' -o -name '*.hpp' -o -name '*.m' -o -name '*.mm' \))
+	ctags-universal $$(find $(srcdir)/src $(srcdir)/test \( -name '*.cpp' -o -name '*.cu' -o -name '*.h' -o -name '*.hpp' -o -name '*.m' -o -name '*.mm' \))
 
 # vim: set noexpandtabs:
