@@ -731,7 +731,7 @@ gpujpeg_reader_read_dqt(struct gpujpeg_decoder* decoder, uint8_t** image, const 
 }
 
 static const char *array_serialize(int comp_count, const uint8_t *comp_id) {
-    _Thread_local static char buffer[1024] = "[";
+    thread_local static char buffer[1024] = "[";
     if (comp_count >= 1) {
         snprintf(buffer + strlen(buffer), sizeof buffer - strlen(buffer), "%" PRIu8, comp_id[0]);
     }
@@ -1671,11 +1671,26 @@ gpujpeg_reader_get_image_info(uint8_t *image, size_t image_size, struct gpujpeg_
     uint8_t unused2[4];
 
     struct gpujpeg_reader reader = {
-        .param.verbose = verbose,
-        .param_image.pixel_format = GPUJPEG_PIXFMT_AUTODETECT,
-        .image_end = image + image_size,
-        .metadata = &info->metadata,
+        {}, // param
+        {}, // param_image
+        0,  // comp_count
+        {}, // scan
+        0,  // scan_count
+        0,  // segment_count
+        0,  // data_compressed_size
+        {}, // segment_info
+        0,  // segment_info_count
+        0,  // segment_info_size
+        image + image_size, // image_end
+        false, // ff_cs_itu601_is_709
+        GPUJPEG_NONE, // header_color_space
+        GPUJPEG_HEADER_DEFAULT, // header_type
+        false, // in_spiff
+        &info->metadata, // metadata
+        nullptr // comment
     };
+    reader.param.verbose = verbose;
+    reader.param_image.pixel_format = GPUJPEG_PIXFMT_AUTODETECT;
 
     // Check first SOI marker
     int marker_soi = gpujpeg_reader_read_marker(&image, reader.image_end, verbose);

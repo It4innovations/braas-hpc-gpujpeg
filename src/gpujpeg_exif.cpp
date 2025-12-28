@@ -84,14 +84,17 @@ static const struct exif_tag_type_info_t
     const char* name;
     unsigned type_flags;
 } exif_tag_type_info[] = {
-      [ET_BYTE] =      {1, "BYTE",      T_NUMERIC|T_UNSIGNED },
-      [ET_ASCII] =     {1, "ASCII",     T_BYTE_ARRAY         },
-      [ET_SHORT] =     {2, "SHORT",     T_NUMERIC|T_UNSIGNED },
-      [ET_LONG] =      {4, "LONG",      T_NUMERIC|T_UNSIGNED },
-      [ET_RATIONAL] =  {8, "RATIONAL",  T_UNSIGNED|T_RATIONAL},
-      [ET_UNDEFINED] = {1, "UNDEFINED", T_BYTE_ARRAY         },
-      [ET_SLONG] =     {4, "SLONG"    , T_NUMERIC            },
-      [ET_SRATIONAL] = {8, "SRATIONAL", T_RATIONAL           },
+      {0, nullptr,      0                    }, // [ET_NONE] = 0
+      {1, "BYTE",       T_NUMERIC|T_UNSIGNED }, // [ET_BYTE] = 1
+      {1, "ASCII",      T_BYTE_ARRAY         }, // [ET_ASCII] = 2
+      {2, "SHORT",      T_NUMERIC|T_UNSIGNED }, // [ET_SHORT] = 3
+      {4, "LONG",       T_NUMERIC|T_UNSIGNED }, // [ET_LONG] = 4
+      {8, "RATIONAL",   T_UNSIGNED|T_RATIONAL}, // [ET_RATIONAL] = 5
+      {0, nullptr,      0                    }, // 6 (unused)
+      {1, "UNDEFINED",  T_BYTE_ARRAY         }, // [ET_UNDEFINED] = 7
+      {0, nullptr,      0                    }, // 8 (unused)
+      {4, "SLONG",      T_NUMERIC            }, // [ET_SLONG] = 9
+      {8, "SRATIONAL",  T_RATIONAL           }, // [ET_SRATIONAL] = 10
 };
 
 enum exif_tiff_tag {
