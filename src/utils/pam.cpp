@@ -158,7 +158,8 @@ mbs_to_wstr_helper(const char* mbstr, wchar_t* wstr_buf, size_t wstr_len)
     MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, mbstr, -1, wstr_buf, size_needed);
     return wstr_buf;
 }
-#define mbs_to_wstr(tstr) mbs_to_wstr_helper(tstr, (wchar_t[1024]){0}, 1024)
+static wchar_t mbs_to_wstr_buffer[1024];
+#define mbs_to_wstr(tstr) mbs_to_wstr_helper(tstr, mbs_to_wstr_buffer, 1024)
 #endif
 
 bool pam_read(const char *filename, struct pam_metadata *info, unsigned char **data, void *(*allocator)(size_t)) {

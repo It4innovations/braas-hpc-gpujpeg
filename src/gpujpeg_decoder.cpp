@@ -145,7 +145,8 @@ gpujpeg_decoder_create(gpuStream_t stream)
 struct gpujpeg_decoder_init_parameters
 gpujpeg_decoder_default_init_parameters(void)
 {
-    return (struct gpujpeg_decoder_init_parameters){gpuStreamDefault, 0, false, false};
+    struct gpujpeg_decoder_init_parameters params = {gpuStreamDefault, 0, false, false};
+    return params;
 }
 /**
  * Create JPEG decoder

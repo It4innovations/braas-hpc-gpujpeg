@@ -704,7 +704,6 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder)
             component->data_width * GPUJPEG_BLOCK_SIZE,
             d_quantization_table
         );
-        GPUJPEG_DEBUG_PRINT_DEVICE_DATA(component->d_data_quantized, int16_t, 10);
         gpujpeg_cuda_check_error("DCT kernel failed", return -1);
     }
 

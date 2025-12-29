@@ -335,7 +335,7 @@ int y4m_save_delegate(const char *filename, const struct gpujpeg_image_parameter
         return -1;
     }
 
-    _Bool limited = param_image->color_space != GPUJPEG_YCBCR_JPEG;
+    bool limited = param_image->color_space != GPUJPEG_YCBCR_JPEG;
 
     struct y4m_metadata info = { .width = param_image->width, .height = param_image->height, .bitdepth = 8, .subsampling = subsampling, .limited = limited };
     return y4m_write(filename, &info, (const unsigned char *) data) ? 0 : -1;

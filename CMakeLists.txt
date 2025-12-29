@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.10.0 FATAL_ERROR)
 # change version also in configure.ac
 
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 # options for GPU backend selection
 option(GPUJPEG_USE_HIP "Build with HIP backend for AMD GPUs" OFF)
 option(GPUJPEG_USE_SYCL "Build with SYCL backend for Intel/other GPUs" OFF)
@@ -16,7 +19,7 @@ endif()
 
 # options
 option(BUILD_SHARED_LIBS "Build using shared libraries" ON)
-option(CMAKE_CUDA_ARCHITECTURES "CUDA architectures to build for (needs CMake 3.18)" OFF)
+set(CMAKE_CUDA_ARCHITECTURES "native" CACHE STRING "CUDA architectures to build for (needs CMake 3.18)")
 option(HUFFMAN_GPU_CONST_TABLES "Enable Huffman GPU decoder quick const tables" OFF)
 
 # Configure GPU Backend
@@ -126,7 +129,11 @@ if (MSVC)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4")
     set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler /W4")
     if (MSVC_VERSION GREATER_EQUAL 1914)
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Zc:__cplusplus")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:__cplusplus")
         set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler /Zc:__cplusplus")
+        # Suppress C4127 warnings for CUDA code (conditional expression is constant in template code)
+        set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler /wd4127")
     endif()
 else()
     if(GPU_BACKEND STREQUAL "HIP")
@@ -155,6 +162,25 @@ file(GLOB GPUJPEG_COMMON_SOURCES src/*.cpp)
 list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
 list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/getopt.cpp")
 
+# For CUDA backend, remove GPU-related .cpp files (these are wrappers for HIP/SYCL only)
+# For HIP/SYCL backends, keep these .cpp files as they are the actual implementation
+if(GPU_BACKEND STREQUAL "CUDA")
+    list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES 
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_dct_gpu.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_huffman_gpu_decoder.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_huffman_gpu_encoder.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_postprocessor.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_preprocessor.cpp"
+    )
+endif()
+
+# For non-SYCL backends, always remove SYCL-specific compatibility layer
+if(NOT GPU_BACKEND STREQUAL "SYCL")
+    list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES 
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_device_compat_sycl.cpp"
+    )
+endif()
+
 # Add utility source files
 list(APPEND GPUJPEG_COMMON_SOURCES
     src/utils/image_delegate.cpp
@@ -180,7 +206,7 @@ if(GPU_BACKEND STREQUAL "CUDA")
     
     # Set CUDA architecture (adjust as needed)
     if(NOT CMAKE_CUDA_ARCHITECTURES OR CMAKE_CUDA_ARCHITECTURES MATCHES OFF)
-        set(CMAKE_CUDA_ARCHITECTURES 52 60 61 70 75 80 86)
+        set(CMAKE_CUDA_ARCHITECTURES 70 75 80 86)
         message(STATUS "Setting default CUDA architectures: ${CMAKE_CUDA_ARCHITECTURES}")
     endif()
     

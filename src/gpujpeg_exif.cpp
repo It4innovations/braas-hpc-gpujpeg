@@ -358,7 +358,8 @@ gpujpeg_write_0th(struct gpujpeg_writer* writer, const uint8_t* start, const str
     char date_time[] = "    :  :     :  :  "; // unknown val by Exif 2.3
     time_t now = time(NULL);
     struct tm buf;
-    (void) strftime(date_time, sizeof date_time, "%Y:%m:%d %H:%M:%S", localtime_s(&now, &buf));
+    (void) localtime_s(&now, &buf);
+    (void) strftime(date_time, sizeof date_time, "%Y:%m:%d %H:%M:%S", &buf);
     uint32_t orientation = ETIFF_ORIENTATION_VERTICAL;
     static uint32_t xres_vals[] = {DPI_DEFAULT, 1};
     static uint32_t yres_vals[] = {DPI_DEFAULT, 1};
@@ -724,11 +725,6 @@ read_0th_ifd(uint8_t** image, const uint8_t* image_end, int verbose, uint16_t (*
 void
 gpujpeg_exif_parse(uint8_t** image, const uint8_t* image_end, int verbose, struct gpujpeg_image_metadata* metadata)
 {
-#define HANDLE_ERROR(...)                                                                                              \
-    WARN_MSG(__VA_ARGS__);                                                                                             \
-    *image = image_start + length;                                                                                     \
-    return
-
     enum {
         EXIF_HDR_MIN_LEN = 18, // with empty 0th IFD
     };
@@ -736,10 +732,14 @@ gpujpeg_exif_parse(uint8_t** image, const uint8_t* image_end, int verbose, struc
     uint8_t *image_start = *image;
     uint16_t length = read_2byte_be(image);
     if (length > image_end - *image - 2) {
-        HANDLE_ERROR("Unexpected end of file!\n");
+        WARN_MSG("Unexpected end of file!\n");
+        *image = image_start + length;
+        return;
     }
     if (length < EXIF_HDR_MIN_LEN) {
-        HANDLE_ERROR("Insufficient Exif header length %u!\n", (unsigned)length);
+        WARN_MSG("Insufficient Exif header length %u!\n", (unsigned)length);
+        *image = image_start + length;
+        return;
     }
     // uint8_t exif[5];
     // for (int i = 0; i < 5; ++i) {
@@ -763,11 +763,15 @@ gpujpeg_exif_parse(uint8_t** image, const uint8_t* image_end, int verbose, struc
         DEBUG_MSG(verbose, "Big endian Exif detected.\n");
     }
     else {
-        HANDLE_ERROR("Unexpected endianity!\n");
+        WARN_MSG("Unexpected endianity!\n");
+        *image = image_start + length;
+        return;
     }
     uint16_t tiff_hdr = read_2byte(image);
     if (tiff_hdr != TIFF_HDR_TAG) {
-        HANDLE_ERROR("Wrong TIFF tag, expected 0x%04x!\n", TIFF_HDR_TAG);
+        WARN_MSG("Wrong TIFF tag, expected 0x%04x!\n", TIFF_HDR_TAG);
+        *image = image_start + length;
+        return;
     }
 
     uint32_t offset = read_4byte(image); // 0th IFD offset
@@ -775,5 +779,4 @@ gpujpeg_exif_parse(uint8_t** image, const uint8_t* image_end, int verbose, struc
     read_0th_ifd(image, image_end, verbose, read_2byte, read_4byte, metadata);
 
     *image = image_start + length;
-#undef HANDLE_ERROR
 }

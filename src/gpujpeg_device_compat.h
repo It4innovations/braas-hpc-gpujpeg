@@ -163,9 +163,9 @@
 static inline unsigned int GPU_DIM_X(const dim3& d) { return d.x; }
 static inline unsigned int GPU_DIM_X(unsigned int d) { return d; }
 static inline unsigned int GPU_DIM_Y(const dim3& d) { return d.y; }
-static inline unsigned int GPU_DIM_Y(unsigned int d) { return 1u; }
+static inline unsigned int GPU_DIM_Y(unsigned int /*d*/) { return 1u; }
 static inline unsigned int GPU_DIM_Z(const dim3& d) { return d.z; }
-static inline unsigned int GPU_DIM_Z(unsigned int d) { return 1u; }
+static inline unsigned int GPU_DIM_Z(unsigned int /*d*/) { return 1u; }
 #else
 #define GPU_DIM_X(d) (__builtin_types_compatible_p(__typeof__(d), dim3) ? (d).x : (unsigned int)(d))
 #define GPU_DIM_Y(d) (__builtin_types_compatible_p(__typeof__(d), dim3) ? (d).y : 1u)

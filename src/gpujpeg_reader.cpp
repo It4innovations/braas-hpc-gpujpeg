@@ -390,7 +390,7 @@ gpujpeg_reader_read_app13(struct gpujpeg_reader* reader, uint8_t** image, const 
 }
 
 static int
-gpujpeg_reader_read_spiff_header(uint8_t** image, int verbose, enum gpujpeg_color_space *color_space, _Bool *in_spiff)
+gpujpeg_reader_read_spiff_header(uint8_t** image, int verbose, enum gpujpeg_color_space *color_space, bool *in_spiff)
 {
     int version = gpujpeg_reader_read_2byte(*image); // version
     int profile_id = gpujpeg_reader_read_byte(*image); // profile ID
@@ -1479,7 +1479,7 @@ gpujpeg_reader_read_common_markers(uint8_t** image, int marker, struct gpujpeg_r
     return 0;
 }
 
-static _Bool sampling_factor_compare(int count, struct gpujpeg_component_sampling_factor *a,
+static bool sampling_factor_compare(int count, struct gpujpeg_component_sampling_factor *a,
     struct gpujpeg_component_sampling_factor *b) {
     for (int comp = 0; comp < count; comp++) {
         if (a[comp].vertical != b[comp].vertical ||
