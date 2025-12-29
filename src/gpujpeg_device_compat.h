@@ -82,6 +82,7 @@
 
 // Math functions
 #define GPU_RINTF(x)                        rintf(x)
+#define GPU_ROUND(x)                        round(x)
 
 // Vector types
 #define GPU_MAKE_UINT4(x, y, z, w)          make_uint4(x, y, z, w)
