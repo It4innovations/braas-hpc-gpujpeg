@@ -1195,6 +1195,11 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
         enum { extradata = (GPUJPEG_MAX_COMPONENT_COUNT + (sizeof(int) - 1)) / sizeof(int) };
         size_t shared_mem_size_warp = (64 + extradata) * WARPS_NUM * sizeof(uint4);
         
+        // Create local copies to avoid SYCL non-const global variable errors
+        const int* _gpujpeg_huffman_gpu_encoder_order_natural = gpujpeg_huffman_gpu_encoder_order_natural;
+        const unsigned int* _gpujpeg_huffman_value_decomposition = gpujpeg_huffman_value_decomposition;
+        const uint32_t* _gpujpeg_huffman_gpu_lut = gpujpeg_huffman_gpu_lut;
+        
         // Run encoder kernel
         dim3 thread(32 * WARPS_NUM);
         dim3 grid = gpujpeg_huffman_gpu_encoder_grid_size(gpujpeg_div_and_round_up(coder->segment_count, (thread.x / 32)));
@@ -1208,9 +1213,9 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
                 coder->d_component,
                 comp_count,
                 huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count,
-                gpujpeg_huffman_gpu_encoder_order_natural,
-                gpujpeg_huffman_value_decomposition,
-                gpujpeg_huffman_gpu_lut
+                _gpujpeg_huffman_gpu_encoder_order_natural,
+                _gpujpeg_huffman_value_decomposition,
+                _gpujpeg_huffman_gpu_lut
             );
             gpujpeg_cuda_check_error("Huffman encoding failed", return -1);
         } else {
@@ -1223,9 +1228,9 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
                 coder->d_component,
                 comp_count,
                 huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count,
-                gpujpeg_huffman_gpu_encoder_order_natural,
-                gpujpeg_huffman_value_decomposition,
-                gpujpeg_huffman_gpu_lut
+                _gpujpeg_huffman_gpu_encoder_order_natural,
+                _gpujpeg_huffman_value_decomposition,
+                _gpujpeg_huffman_gpu_lut
             );
             gpujpeg_cuda_check_error("Huffman encoding failed", return -1);
         }
