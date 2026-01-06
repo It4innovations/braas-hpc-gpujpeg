@@ -77,19 +77,74 @@ namespace gpujpeg_sycl {
     
     // Export as sycl::async_handler
     sycl::async_handler async_handler = async_handler_impl;
+    
+    // Helper function to create a queue with appropriate properties
+    // Returns the created queue or nullptr on error
+    sycl::queue* create_queue(const sycl::device& device) {
+        try {
+            std::cout << "[SYCL] Creating queue for device: " 
+                      << device.get_info<sycl::info::device::name>()
+                      << " (" << (device.is_gpu() ? "GPU" : device.is_cpu() ? "CPU" : "Accelerator") << ")"
+                      << std::endl;
+
+            sycl::property_list props;
+            
+            // Use in_order queue for CPU devices to reduce overhead
+            if (device.is_cpu()) {
+                props = {sycl::property::queue::in_order(), sycl::property::queue::enable_profiling()};
+            } else {
+                props = {sycl::property::queue::enable_profiling()};
+            }
+            
+            return new sycl::queue(device, gpujpeg_sycl::async_handler, props);
+        } catch (const std::exception& e) {
+            std::cerr << "[SYCL ERROR] Failed to create queue: " << e.what() << std::endl;
+            return nullptr;
+        } catch (...) {
+            std::cerr << "[SYCL ERROR] Failed to create queue: unknown error" << std::endl;
+            return nullptr;
+        }
+    }
+    
+    // Helper function to ensure default queue is initialized
+    // Returns 0 on success, -1 on error
+    int ensure_default_queue() {
+        if (gpujpeg_sycl::default_queue) {
+            return 0;  // Already initialized
+        }
+        
+        try {
+            // Use default_selector_v which respects ONEAPI_DEVICE_SELECTOR
+            auto device = sycl::device(sycl::default_selector_v);
+            
+            gpujpeg_sycl::default_queue = create_queue(device);
+            if (!gpujpeg_sycl::default_queue) {
+                return -1;
+            }
+            
+            auto dev = gpujpeg_sycl::default_queue->get_device();
+            std::cerr << "[SYCL] Default queue created for device: " 
+                      << dev.get_info<sycl::info::device::name>()
+                      << " (" << (dev.is_gpu() ? "GPU" : dev.is_cpu() ? "CPU" : "Accelerator") << ")"
+                      << (device.is_cpu() ? " [in_order]" : " [out_of_order]") << std::endl;
+            
+            return 0;
+        } catch (const std::exception& e) {
+            std::cerr << "[SYCL ERROR] Failed to create default queue: " << e.what() << std::endl;
+            return -1;
+        } catch (...) {
+            std::cerr << "[SYCL ERROR] Failed to create default queue: unknown error" << std::endl;
+            return -1;
+        }
+    }
 }
 
 extern "C" {
 
 gpuError_t gpuMalloc(void** ptr, size_t size) {
     try {
-        if (!gpujpeg_sycl::default_queue) {
-            // Use default_selector_v which respects ONEAPI_DEVICE_SELECTOR
-            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
-            auto dev = gpujpeg_sycl::default_queue->get_device();
-            std::cerr << "[SYCL] Default queue created for device: " 
-                      << dev.get_info<sycl::info::device::name>()
-                      << " (" << (dev.is_gpu() ? "GPU" : dev.is_cpu() ? "CPU" : "Accelerator") << ")" << std::endl;
+        if (gpujpeg_sycl::ensure_default_queue() != 0) {
+            return -1;
         }
         
         // For CPU devices, use shared memory instead of device-only memory
@@ -111,8 +166,8 @@ gpuError_t gpuMalloc(void** ptr, size_t size) {
 
 gpuError_t gpuMallocHost(void** ptr, size_t size) {
     try {
-        if (!gpujpeg_sycl::default_queue) {
-            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
+        if (gpujpeg_sycl::ensure_default_queue() != 0) {
+            return -1;
         }
         *ptr = sycl::malloc_host(size, *gpujpeg_sycl::default_queue);
         return *ptr ? gpuSuccess : -1;
@@ -145,8 +200,8 @@ gpuError_t gpuFreeHost(void* ptr) {
 
 gpuError_t gpuMemcpy(void* dst, const void* src, size_t count, int kind) {
     try {
-        if (!gpujpeg_sycl::default_queue) {
-            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
+        if (gpujpeg_sycl::ensure_default_queue() != 0) {
+            return -1;
         }
         
         if (!dst || !src || count == 0) {
@@ -169,8 +224,8 @@ gpuError_t gpuMemcpy(void* dst, const void* src, size_t count, int kind) {
 
 gpuError_t gpuMemset(void* ptr, int value, size_t count) {
     try {
-        if (!gpujpeg_sycl::default_queue) {
-            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
+        if (gpujpeg_sycl::ensure_default_queue() != 0) {
+            return -1;
         }
 
         gpujpeg_sycl::default_queue->memset(ptr, value, count).wait_and_throw();        
@@ -198,8 +253,8 @@ gpuError_t gpuMemcpyAsync(void* dst, const void* src, size_t count, int kind, gp
     try {
         sycl::queue* q = stream ? stream : gpujpeg_sycl::default_queue;
         if (!q) {
-            if (!gpujpeg_sycl::default_queue) {
-                gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
+            if (gpujpeg_sycl::ensure_default_queue() != 0) {
+                return -1;
             }
             q = gpujpeg_sycl::default_queue;
         }
@@ -237,8 +292,8 @@ gpuError_t gpuMemcpy2DAsync(void* dst, size_t dpitch, const void* src, size_t sp
     try {
         sycl::queue* q = stream ? stream : gpujpeg_sycl::default_queue;
         if (!q) {
-            if (!gpujpeg_sycl::default_queue) {
-                gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
+            if (gpujpeg_sycl::ensure_default_queue() != 0) {
+                return -1;
             }
             q = gpujpeg_sycl::default_queue;
         }
@@ -312,12 +367,9 @@ gpuError_t gpuEventRecord(gpuEvent_t event, gpuStream_t stream) {
             return -1;
         }
         
-        // Record timestamp after synchronizing with stream
-        sycl::queue* q = stream ? stream : gpujpeg_sycl::default_queue;
-        if (q) {
-            q->wait();
-        }
-        
+        // Record timestamp WITHOUT synchronizing (async like CUDA)
+        // The timestamp will be approximate but won't block execution
+        // For accurate timing, use gpuEventSynchronize() before gpuEventElapsedTime()
         auto* evt_data = static_cast<gpujpeg_sycl::EventData*>(event);
         evt_data->timestamp = std::chrono::high_resolution_clock::now();
         return gpuSuccess;
@@ -366,12 +418,16 @@ gpuError_t gpuSetDevice(int device) {
         }
         
         // Create queue for the selected device
-        gpujpeg_sycl::default_queue = new sycl::queue(devices[device], gpujpeg_sycl::async_handler);
-        
         auto& dev = devices[device];
+        gpujpeg_sycl::default_queue = gpujpeg_sycl::create_queue(dev);
+        if (!gpujpeg_sycl::default_queue) {
+            return -1;
+        }
+        
         std::cerr << "[SYCL] Device set to [" << device << "]: " 
                   << dev.get_info<sycl::info::device::name>()
-                  << " (" << (dev.is_gpu() ? "GPU" : dev.is_cpu() ? "CPU" : "Accelerator") << ")" << std::endl;
+                  << " (" << (dev.is_gpu() ? "GPU" : dev.is_cpu() ? "CPU" : "Accelerator") << ")"
+                  << (dev.is_cpu() ? " [in_order]" : " [out_of_order]") << std::endl;
         
         return gpuSuccess;
     } catch (const std::exception& e) {

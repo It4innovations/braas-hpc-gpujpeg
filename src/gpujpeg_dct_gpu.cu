@@ -269,10 +269,10 @@ gpujpeg_dct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA
                     -1024.0f  // = 8 * -128 ... level shift sum for all 8 coefficients
     );
 
-#ifdef GPUJPEG_USE_SYCL
-    auto sg = item.get_sub_group();
-    sycl::group_barrier(sg);
-#endif
+// #ifdef GPUJPEG_USE_SYCL
+//     auto sg = item.get_sub_group();
+//     sycl::group_barrier(sg);
+// #endif
 
     // read coefficients back - each thread reads one row (no need to sync - only threads within same warp work on each block)
     // ... and transform the row horizontally

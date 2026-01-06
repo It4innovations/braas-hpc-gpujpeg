@@ -14,7 +14,7 @@
 #include <stddef.h>  // for size_t
 
 // Uncomment to enable kernel launch logging
-#define GPUJPEG_DEBUG_KERNEL_LAUNCH
+//#define GPUJPEG_DEBUG_KERNEL_LAUNCH
 
 // Determine which GPU backend to use
 // Check CMake-defined macros first, then fall back to compiler detection
@@ -619,6 +619,9 @@ namespace gpujpeg_sycl {
     extern sycl::queue* default_queue;
     // Async exception handler declaration
     extern sycl::async_handler async_handler;
+
+    // Ensure default SYCL queue is initialized
+    int ensure_default_queue();
 }
 
 // Kernel launch - SYCL uses queue.submit with parallel_for
@@ -642,8 +645,9 @@ inline void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t sme
 
     // Use default queue if q is null
     if (!q) {
-        if (!gpujpeg_sycl::default_queue) {
-            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
+        if (gpujpeg_sycl::ensure_default_queue() != 0) {
+            std::cerr << "[SYCL KERNEL LAUNCH] Error: Default SYCL queue cannot be initialized." << std::endl;
+            return;
         }
         q = gpujpeg_sycl::default_queue;
     }
@@ -674,7 +678,7 @@ inline void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t sme
 #endif
 
         // Force synchronization AND error propagation
-        e.wait_and_throw();
+        // e.wait_and_throw();
 
 #ifdef GPUJPEG_DEBUG_KERNEL_LAUNCH
         std::cerr << "[SYCL KERNEL LAUNCH] Kernel completed successfully" << std::endl;

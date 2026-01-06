@@ -337,7 +337,7 @@ gpujpeg_encoder_encode(struct gpujpeg_encoder* encoder, const struct gpujpeg_par
     assert(param->comp_count <= GPUJPEG_MAX_COMPONENT_COUNT);
     assert(param->quality >= 0 && param->quality <= 100);
     assert(param->restart_interval >= RESTART_AUTO);
-    assert(param->interleaved == 0 || param->interleaved == 1);
+    assert(param->interleaved == 0 || param->interleaved == 1); 
 
     // Get coder
     struct gpujpeg_coder* coder = &encoder->coder;
