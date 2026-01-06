@@ -83,8 +83,13 @@ struct gpujpeg_huffman_gpu_encoder
  * Initializes coefficient decomposition table in global memory.  (CC >= 2.0)
  * Output table is a mapping from some value into its code and bit size.
  */
+#ifdef GPUJPEG_USE_SYCL
 GPU_GLOBAL static void
 gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA unsigned int * _gpujpeg_huffman_value_decomposition){
+#else
+GPU_GLOBAL static void
+gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM){
+#endif
     // fetch some value
     const int tid = GPU_THREAD_IDX_X + GPU_BLOCK_IDX_X * GPU_BLOCK_DIM_X;
     const int value = tid - 4096;
@@ -111,7 +116,11 @@ gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel(GPU_KERNEL_ITEM_PARA
     // Avoid undefined behavior: shifting by 32 bits is UB for 32-bit types
     unsigned int shifted_code = (value_nbits == 0) ? 0 : (value_code << (32 - value_nbits));
 
+#ifdef GPUJPEG_USE_SYCL
     _gpujpeg_huffman_value_decomposition[tid] = value_nbits | shifted_code;
+#else
+    gpujpeg_huffman_value_decomposition[tid] = value_nbits | shifted_code;
+#endif
 }
 
 #if defined(__CUDACC__) && __CUDA_ARCH__ >= 200 //|| defined(__HIP_DEVICE_COMPILE__) || defined(SYCL_DEVICE_ONLY)
@@ -1089,7 +1098,7 @@ gpujpeg_huffman_gpu_encoder_create(const struct gpujpeg_encoder * encoder)
     unsigned int* local_value_decomp = gpujpeg_huffman_value_decomposition;
     GPU_KERNEL_LAUNCH(gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel, 32, 256, 0, coder->stream, local_value_decomp);  // 8192 threads total
 #else
-    GPU_KERNEL_LAUNCH(gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel, 32, 256, 0, coder->stream, gpujpeg_huffman_value_decomposition);  // 8192 threads total
+    GPU_KERNEL_LAUNCH(gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel, 32, 256, 0, coder->stream);  // 8192 threads total
 #endif
     if (gpuStreamSynchronize(coder->stream) != gpuSuccess)
         gpujpeg_cuda_check_error("Decomposition LUT initialization failed", return NULL);
