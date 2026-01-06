@@ -415,6 +415,9 @@ gpuError_t gpuSetDevice(int device) {
         if (gpujpeg_sycl::default_queue) {
             gpujpeg_sycl::default_queue->wait();
             delete gpujpeg_sycl::default_queue;
+            
+            gpujpeg_sycl::default_queue = nullptr;
+            std::cout << "[SYCL] Previous default queue destroyed" << std::endl;
         }
         
         // Create queue for the selected device
