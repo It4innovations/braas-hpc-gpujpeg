@@ -340,7 +340,11 @@ endif()
 # GPUJPEG command-line application
 if(NOT IS_SUBMODULE)
     # GPUJPEG commmand-line application
-    add_executable(gpujpegtool src/main.cpp)
+    set(GPUJPEGTOOL_SOURCES src/main.cpp)
+    if(WIN32)
+        list(APPEND GPUJPEGTOOL_SOURCES src/utils/getopt.cpp)
+    endif()
+    add_executable(gpujpegtool ${GPUJPEGTOOL_SOURCES})
     # set_target_properties(gpujpegtool PROPERTIES LINKER_LANGUAGE CXX)
     #target_compile_features(gpujpeg-bin PRIVATE ${NEEDED_COMPILER_FEATURES})
     #set_property(TARGET gpujpeg-bin PROPERTY C_STANDARD 99)

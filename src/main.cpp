@@ -41,9 +41,13 @@
     #include <getopt.h>
 #endif
 
+// WIN32 support
+#ifdef _WIN32
+    #include <windows.h> // SetConsoleOutputCP, WideCharToMultiByte
+#endif
+
 // WIN32 wchar support
 #if defined(_UNICODE)
-    #include <windows.h> // WideCharToMultiByte
     #include <tchar.h>
     #define option _toption
     #define optarg _toptarg
@@ -82,7 +86,10 @@ tstr_to_mbs_helper(const TCHAR* tstr, char* mbs_buf, size_t mbs_len)
     return (char *) tstr;
 #endif
 }
-#define tstr_to_mbs(tstr) tstr_to_mbs_helper(tstr, (char[1024]){0}, 1024)
+static inline char* tstr_to_mbs(const TCHAR* tstr) {
+    static char buf[1024] = {0};
+    return tstr_to_mbs_helper(tstr, buf, 1024);
+}
 
 #ifdef _UNICODE
 static wchar_t*
@@ -100,7 +107,10 @@ mbs_to_wstr_helper(const char* mbstr, wchar_t* wstr_buf, size_t wstr_len)
     MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, mbstr, -1, wstr_buf, size_needed);
     return wstr_buf;
 }
-#define mbs_to_wstr(tstr) mbs_to_wstr_helper(tstr, (wchar_t[1024]){0}, 1024)
+static inline wchar_t* mbs_to_wstr(const char* tstr) {
+    static wchar_t buf[1024] = {0};
+    return mbs_to_wstr_helper(tstr, buf, 1024);
+}
 #endif
 
 static void
@@ -459,10 +469,10 @@ main(int argc, char *argv[])
 
     // Other parameters
     int device_id = 0;
-    _Bool encode = 0;
-    _Bool decode = 0;
-    _Bool convert = 0;
-    _Bool component_range = 0;
+    int encode = 0;
+    int decode = 0;
+    int convert = 0;
+    int component_range = 0;
     int iterate = 1;
     bool debug = false;
     struct coder_opts decoder_options[CODER_OPTS_COUNT + 1] = {0};

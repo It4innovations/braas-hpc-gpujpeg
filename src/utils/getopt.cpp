@@ -88,7 +88,7 @@ static void permute_args(int, int, int, TCHAR * const *);
 static void xwarnx(const TCHAR *fmt, ...);
 static int envset(const char *name);
 
-static TCHAR *place = EMSG; /* option letter processing */
+static const TCHAR *place = EMSG; /* option letter processing */
 
 /* XXX: set optreset to 1 rather than these two */
 static int nonopt_start = -1; /* first non option argument (for permute) */
@@ -196,7 +196,7 @@ parse_long_options(TCHAR * const *nargv, const TCHAR *options,
     size_t current_argv_len;
     int i, match, exact_match, second_partial_match;
 
-    current_argv = place;
+    current_argv = const_cast<TCHAR*>(place);
     match = -1;
     exact_match = 0;
     second_partial_match = 0;
@@ -317,7 +317,7 @@ static int
 getopt_internal(int nargc, TCHAR * const *nargv, const TCHAR *options,
     const struct _toption *long_options, int *idx, int flags)
 {
-    TCHAR *oli;                /* option letter list index */
+    const TCHAR *oli;                /* option letter list index */
     int optchar, short_too;
     static int posixly_correct = -1;
 
@@ -477,7 +477,7 @@ start:
     } else {                /* takes (optional) argument */
         _toptarg = NULL;
         if (*place)            /* no white space */
-            _toptarg = place;
+            _toptarg = const_cast<TCHAR*>(place);
         else if (oli[1] != _T(':')) {    /* arg not optional */
             if (++optind >= nargc) {    /* no arg */
                 place = EMSG;
@@ -486,7 +486,7 @@ start:
                 optopt = optchar;
                 return (BADARG);
             } else
-                _toptarg = nargv[optind];
+                _toptarg = const_cast<TCHAR*>(nargv[optind]);
         }
         place = EMSG;
         ++optind;
