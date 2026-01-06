@@ -14,7 +14,7 @@
 #include <stddef.h>  // for size_t
 
 // Uncomment to enable kernel launch logging
-//#define GPUJPEG_DEBUG_KERNEL_LAUNCH
+#define GPUJPEG_DEBUG_KERNEL_LAUNCH
 
 // Determine which GPU backend to use
 // Check CMake-defined macros first, then fall back to compiler detection
@@ -673,15 +673,11 @@ inline void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t sme
             }
         });
 
-#ifdef GPUJPEG_DEBUG_KERNEL_LAUNCH
-        std::cerr << "[SYCL KERNEL LAUNCH] Kernel submitted, waiting for completion..." << std::endl;
-#endif
-
         // Force synchronization AND error propagation
         // e.wait_and_throw();
 
 #ifdef GPUJPEG_DEBUG_KERNEL_LAUNCH
-        std::cerr << "[SYCL KERNEL LAUNCH] Kernel completed successfully" << std::endl;
+        std::cerr << "[SYCL KERNEL LAUNCH] Kernel has been successfully launched." << std::endl;
 #endif
 
     } catch (const sycl::exception& e) {
