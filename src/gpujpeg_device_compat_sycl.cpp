@@ -9,12 +9,15 @@
 
 #include <sycl/sycl.hpp>
 #include <map>
+#include <vector>
 #include <chrono>
 #include <cstring>
 #include <iostream>
 
 namespace gpujpeg_sycl {
     sycl::queue* default_queue = nullptr;
+    std::vector<sycl::device> cached_devices;
+    bool devices_cached = false;
     
     // Simple event tracking for timing
     struct EventData {
@@ -22,6 +25,38 @@ namespace gpujpeg_sycl {
     };
     
     std::map<gpuEvent_t, EventData> event_map;
+    
+    // Helper function to get all available devices (respects ONEAPI_DEVICE_SELECTOR)
+    const std::vector<sycl::device>& get_devices() {
+        if (!devices_cached) {
+            try {
+                // Get all devices (GPU and CPU) to support ONEAPI_DEVICE_SELECTOR
+                // Try GPU devices first
+                auto gpu_devices = sycl::device::get_devices(sycl::info::device_type::gpu);
+                cached_devices.insert(cached_devices.end(), gpu_devices.begin(), gpu_devices.end());
+                
+                // Also try CPU devices
+                auto cpu_devices = sycl::device::get_devices(sycl::info::device_type::cpu);
+                cached_devices.insert(cached_devices.end(), cpu_devices.begin(), cpu_devices.end());
+                
+                // Also try accelerator devices
+                auto accel_devices = sycl::device::get_devices(sycl::info::device_type::accelerator);
+                cached_devices.insert(cached_devices.end(), accel_devices.begin(), accel_devices.end());
+                
+                devices_cached = true;
+                
+                std::cerr << "[SYCL] Found " << cached_devices.size() << " device(s):" << std::endl;
+                for (size_t i = 0; i < cached_devices.size(); ++i) {
+                    std::cerr << "  [" << i << "] " << cached_devices[i].get_info<sycl::info::device::name>()
+                              << " (" << (cached_devices[i].is_gpu() ? "GPU" : 
+                                         cached_devices[i].is_cpu() ? "CPU" : "Accelerator") << ")" << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[SYCL] Error enumerating devices: " << e.what() << std::endl;
+            }
+        }
+        return cached_devices;
+    }
     
     // Define async exception handler as a function (can be used as sycl::async_handler)
     void async_handler_impl(sycl::exception_list exceptions) {
@@ -49,10 +84,26 @@ extern "C" {
 gpuError_t gpuMalloc(void** ptr, size_t size) {
     try {
         if (!gpujpeg_sycl::default_queue) {
+            // Use default_selector_v which respects ONEAPI_DEVICE_SELECTOR
             gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
+            auto dev = gpujpeg_sycl::default_queue->get_device();
+            std::cerr << "[SYCL] Default queue created for device: " 
+                      << dev.get_info<sycl::info::device::name>()
+                      << " (" << (dev.is_gpu() ? "GPU" : dev.is_cpu() ? "CPU" : "Accelerator") << ")" << std::endl;
         }
+        
+        // For CPU devices, use shared memory instead of device-only memory
+        // This avoids memcpy issues with OpenCL CPU backend
+        // auto dev = gpujpeg_sycl::default_queue->get_device();
+        // if (dev.is_cpu()) {
+        //     *ptr = sycl::malloc_shared(size, *gpujpeg_sycl::default_queue);
+        // } else {
         *ptr = sycl::malloc_device(size, *gpujpeg_sycl::default_queue);
+        // }
         return *ptr ? gpuSuccess : -1;
+    } catch (const std::exception& e) {
+        std::cerr << "[SYCL ERROR in gpuMalloc] " << e.what() << std::endl;
+        return -1;
     } catch (...) {
         return -1;
     }
@@ -97,9 +148,21 @@ gpuError_t gpuMemcpy(void* dst, const void* src, size_t count, int kind) {
         if (!gpujpeg_sycl::default_queue) {
             gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
         }
-        gpujpeg_sycl::default_queue->memcpy(dst, src, count).wait();
+        
+        if (!dst || !src || count == 0) {
+            std::cerr << "[gpuMemcpy ERROR] Invalid parameters: "
+                      << "dst=" << dst << ", src=" << src << ", count=" << count << std::endl;
+            return -1;
+        }
+
+        gpujpeg_sycl::default_queue->memcpy(dst, src, count).wait_and_throw();
+
         return gpuSuccess;
+    } catch (const sycl::exception& e) {
+        std::cerr << "[SYCL ERROR in gpuMemcpy] " << e.what() << std::endl;
+        return -1;
     } catch (...) {
+        std::cerr << "[UNKNOWN ERROR in gpuMemcpy]" << std::endl;
         return -1;
     }
 }
@@ -109,7 +172,8 @@ gpuError_t gpuMemset(void* ptr, int value, size_t count) {
         if (!gpujpeg_sycl::default_queue) {
             gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
         }
-        gpujpeg_sycl::default_queue->memset(ptr, value, count).wait();
+
+        gpujpeg_sycl::default_queue->memset(ptr, value, count).wait_and_throw();        
         return gpuSuccess;
     } catch (...) {
         return -1;
@@ -122,6 +186,7 @@ gpuError_t gpuMemsetAsync(void* ptr, int value, size_t count, gpuStream_t stream
         if (!q) {
             return -1;
         }
+        
         q->memset(ptr, value, count);
         return gpuSuccess;
     } catch (...) {
@@ -133,11 +198,25 @@ gpuError_t gpuMemcpyAsync(void* dst, const void* src, size_t count, int kind, gp
     try {
         sycl::queue* q = stream ? stream : gpujpeg_sycl::default_queue;
         if (!q) {
+            if (!gpujpeg_sycl::default_queue) {
+                gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
+            }
+            q = gpujpeg_sycl::default_queue;
+        }
+        
+        if (!dst || !src || count == 0) {
+            std::cerr << "[gpuMemcpyAsync ERROR] Invalid parameters: "
+                      << "dst=" << dst << ", src=" << src << ", count=" << count << std::endl;
             return -1;
         }
+        
         q->memcpy(dst, src, count);
         return gpuSuccess;
+    } catch (const sycl::exception& e) {
+        std::cerr << "[SYCL ERROR in gpuMemcpyAsync] " << e.what() << std::endl;
+        return -1;
     } catch (...) {
+        std::cerr << "[UNKNOWN ERROR in gpuMemcpyAsync]" << std::endl;
         return -1;
     }
 }
@@ -158,72 +237,38 @@ gpuError_t gpuMemcpy2DAsync(void* dst, size_t dpitch, const void* src, size_t sp
     try {
         sycl::queue* q = stream ? stream : gpujpeg_sycl::default_queue;
         if (!q) {
-            return -1;
+            if (!gpujpeg_sycl::default_queue) {
+                gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
+            }
+            q = gpujpeg_sycl::default_queue;
         }
         
+        // Validate parameters
+        if (!dst || !src || width == 0 || height == 0) {
+            std::cerr << "[gpuMemcpy2DAsync ERROR] Invalid parameters: "
+                      << "dst=" << dst << ", src=" << src 
+                      << ", width=" << width << ", height=" << height << std::endl;
+            return -1;
+        }
+
         // Perform 2D copy row by row
-        // Need to capture offset values, not computed pointers, for async operations
+        // Submit all memcpy operations to the queue (they will be async)
         const uint8_t* src_base = static_cast<const uint8_t*>(src);
         uint8_t* dst_base = static_cast<uint8_t*>(dst);
         
         for (size_t row = 0; row < height; ++row) {
             size_t src_offset = row * spitch;
             size_t dst_offset = row * dpitch;
+            
+            // Each row copy is submitted asynchronously
             q->memcpy(dst_base + dst_offset, src_base + src_offset, width);
         }
         return gpuSuccess;
-    } catch (...) {
+    } catch (const sycl::exception& e) {
+        std::cerr << "[SYCL ERROR in gpuMemcpy2DAsync] " << e.what() << std::endl;
         return -1;
-    }
-}
-
-gpuError_t gpuMemcpyToSymbol(const void* symbol, const void* src, size_t count, 
-                             size_t offset, int kind) {
-    try {
-        if (!gpujpeg_sycl::default_queue) {
-            gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
-        }
-        
-        // In SYCL, "symbols" are just pointers to device memory
-        // Cast away const since we're initializing the memory
-        void* dst = const_cast<void*>(static_cast<const void*>(static_cast<const char*>(symbol) + offset));
-        
-        // Perform the copy based on the kind
-        if (kind == gpuMemcpyHostToDevice) {
-            gpujpeg_sycl::default_queue->memcpy(dst, src, count).wait();
-        } else if (kind == gpuMemcpyDeviceToDevice) {
-            gpujpeg_sycl::default_queue->memcpy(dst, src, count).wait();
-        } else {
-            return -1;
-        }
-        
-        return gpuSuccess;
     } catch (...) {
-        return -1;
-    }
-}
-
-gpuError_t gpuMemcpyToSymbolAsync(const void* symbol, const void* src, size_t count, 
-                                  size_t offset, int kind, gpuStream_t stream) {
-    try {
-        sycl::queue* q = stream ? stream : gpujpeg_sycl::default_queue;
-        if (!q) {
-            return -1;
-        }
-        
-        // In SYCL, "symbols" are just pointers to device memory
-        // Cast away const since we're initializing the memory
-        void* dst = const_cast<void*>(static_cast<const void*>(static_cast<const char*>(symbol) + offset));
-        
-        // Perform async copy based on the kind (no wait)
-        if (kind == gpuMemcpyHostToDevice || kind == gpuMemcpyDeviceToDevice) {
-            q->memcpy(dst, src, count);
-        } else {
-            return -1;
-        }
-        
-        return gpuSuccess;
-    } catch (...) {
+        std::cerr << "[UNKNOWN ERROR in gpuMemcpy2DAsync]" << std::endl;
         return -1;
     }
 }
@@ -306,13 +351,32 @@ gpuError_t gpuEventElapsedTime(float* ms, gpuEvent_t start, gpuEvent_t end) {
 
 gpuError_t gpuSetDevice(int device) {
     try {
-        // For SYCL, device selection is more complex and would need proper implementation
-        // This is a simplified placeholder
+        const auto& devices = gpujpeg_sycl::get_devices();
+        
+        if (device < 0 || device >= static_cast<int>(devices.size())) {
+            std::cerr << "[SYCL ERROR] Invalid device index: " << device 
+                      << " (available: " << devices.size() << ")" << std::endl;
+            return -1;
+        }
+        
+        // Delete old queue if exists
         if (gpujpeg_sycl::default_queue) {
+            gpujpeg_sycl::default_queue->wait();
             delete gpujpeg_sycl::default_queue;
         }
-        gpujpeg_sycl::default_queue = new sycl::queue(sycl::default_selector_v, gpujpeg_sycl::async_handler);
+        
+        // Create queue for the selected device
+        gpujpeg_sycl::default_queue = new sycl::queue(devices[device], gpujpeg_sycl::async_handler);
+        
+        auto& dev = devices[device];
+        std::cerr << "[SYCL] Device set to [" << device << "]: " 
+                  << dev.get_info<sycl::info::device::name>()
+                  << " (" << (dev.is_gpu() ? "GPU" : dev.is_cpu() ? "CPU" : "Accelerator") << ")" << std::endl;
+        
         return gpuSuccess;
+    } catch (const std::exception& e) {
+        std::cerr << "[SYCL ERROR in gpuSetDevice] " << e.what() << std::endl;
+        return -1;
     } catch (...) {
         return -1;
     }
@@ -336,8 +400,8 @@ gpuError_t gpuGetDeviceCount(int* count) {
         if (!count) {
             return -1;
         }
-        // Count available GPU devices
-        auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
+        // Count all available devices (GPU and CPU)
+        const auto& devices = gpujpeg_sycl::get_devices();
         *count = static_cast<int>(devices.size());
         return gpuSuccess;
     } catch (...) {
@@ -351,7 +415,10 @@ gpuError_t gpuGetDeviceProperties(gpuDeviceProp* prop, int device) {
             return -1;
         }
         
-        auto devices = sycl::device::get_devices(sycl::info::device_type::gpu);
+        // Initialize all fields to zero first
+        memset(prop, 0, sizeof(gpuDeviceProp));
+        
+        const auto& devices = gpujpeg_sycl::get_devices();
         if (device < 0 || device >= static_cast<int>(devices.size())) {
             return -1;
         }
@@ -375,18 +442,34 @@ gpuError_t gpuGetDeviceProperties(gpuDeviceProp* prop, int device) {
         prop->clockRate = dev.get_info<sycl::info::device::max_clock_frequency>() * 1000; // Convert to kHz
         prop->multiProcessorCount = dev.get_info<sycl::info::device::max_compute_units>();
         
+        // Detect device type for appropriate defaults
+        bool is_cpu = dev.is_cpu();
+        bool is_gpu = dev.is_gpu();
+        
         // Set defaults for properties not directly available in SYCL
+        // IMPORTANT: Set major/minor early so they're visible in initialization messages
+        prop->major = 1;  // Simulate compute capability 3.5 (Kepler) for SYCL
+        prop->minor = 0;
         prop->regsPerBlock = 65536; // Approximate default
-        prop->warpSize = 32; // Typical warp size
+        
+        // Set warp size based on device type
+        // Intel GPUs typically use 32 (SIMD-32), CPUs use 1 (no SIMD grouping at this level)
+        if (is_cpu) {
+            prop->warpSize = 1;  // CPUs don't have true warp/wavefront concept
+        } else {
+            prop->warpSize = 32; // GPUs typically use 32 (Intel) or 64 (AMD)
+        }
+        
         prop->memPitch = SIZE_MAX;
         prop->maxGridSize[0] = prop->maxGridSize[1] = prop->maxGridSize[2] = 65535;
         prop->totalConstMem = 64 * 1024; // 64KB typical
-        prop->major = 1;
-        prop->minor = 0;
         prop->textureAlignment = 512;
         prop->deviceOverlap = 1;
         
         return gpuSuccess;
+    } catch (const std::exception& e) {
+        std::cerr << "[SYCL ERROR in gpuGetDeviceProperties] " << e.what() << std::endl;
+        return -1;
     } catch (...) {
         return -1;
     }

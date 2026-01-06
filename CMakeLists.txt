@@ -52,6 +52,12 @@ elseif(GPUJPEG_USE_SYCL)
     
     # Add SYCL flags to C++ compiler only (C files will use forward declarations)
     # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl")
+
+    if(CMAKE_BUILD_TYPE MATCHES "Debug")
+        # Debug-specific settings
+        # -fsanitize=address,undefined can be added if needed
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -fno-omit-frame-pointer")
+    endif()    
     
 else()
     set(GPU_BACKEND "CUDA")
@@ -331,13 +337,20 @@ elseif(GPU_BACKEND STREQUAL "SYCL")
     endif()
 endif()
 
-#     target_compile_options(gpujpeg-bin PRIVATE $<$<COMPILE_LANGUAGE:C>:/D_UNICODE>)
-# endif()
-# target_compile_features(gpujpeg-bin PRIVATE ${NEEDED_COMPILER_FEATURES})
-# set_property(TARGET gpujpeg-bin PROPERTY C_STANDARD 99)
-# target_link_libraries(gpujpeg-bin gpujpeg)
-# set(GPUJPEG_BIN_OUTPUT_NAME "gpujpegtool")
-# set_target_properties(gpujpeg-bin PROPERTIES OUTPUT_NAME ${GPUJPEG_BIN_OUTPUT_NAME})
+# GPUJPEG command-line application
+if(NOT IS_SUBMODULE)
+    # GPUJPEG commmand-line application
+    add_executable(gpujpegtool src/main.cpp)
+    #target_compile_features(gpujpeg-bin PRIVATE ${NEEDED_COMPILER_FEATURES})
+    #set_property(TARGET gpujpeg-bin PROPERTY C_STANDARD 99)
+    target_link_libraries(gpujpegtool gpujpeg)
+    # set_target_properties(gpujpeg-bin PROPERTIES OUTPUT_NAME "gpujpeg")
+    install(TARGETS gpujpegtool DESTINATION bin)
+    
+    # Test program to generate gradient RGB image
+    add_executable(create_rgb_gradient src/create_rgb_gradient.cpp)
+    install(TARGETS create_rgb_gradient DESTINATION bin)
+endif()
 
 install(TARGETS ${PROJECT_NAME} #gpujpeg-bin
         EXPORT GPUJPEGTargets

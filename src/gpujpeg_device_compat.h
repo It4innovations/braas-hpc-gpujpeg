@@ -551,10 +551,14 @@ gpuError_t gpuMemcpy(void* dst, const void* src, size_t count, int kind);
 gpuError_t gpuMemcpyAsync(void* dst, const void* src, size_t count, int kind, gpuStream_t stream);
 gpuError_t gpuMemcpy2DAsync(void* dst, size_t dpitch, const void* src, size_t spitch, 
                             size_t width, size_t height, int kind, gpuStream_t stream);
-gpuError_t gpuMemcpyToSymbol(const void* symbol, const void* src, size_t count, 
-                             size_t offset, int kind);
-gpuError_t gpuMemcpyToSymbolAsync(const void* symbol, const void* src, size_t count, 
-                                  size_t offset, int kind, gpuStream_t stream);
+
+// gpuMemcpyToSymbol and gpuMemcpyToSymbolAsync are not supported in SYCL
+// Use regular gpuMemcpy instead with device pointers
+#define gpuMemcpyToSymbol(symbol, src, count, offset, kind) \
+    _Pragma("GCC error \"gpuMemcpyToSymbol is not supported for SYCL. Use gpuMemcpy with device pointers instead.\"")
+#define gpuMemcpyToSymbolAsync(symbol, src, count, offset, kind, stream) \
+    _Pragma("GCC error \"gpuMemcpyToSymbolAsync is not supported for SYCL. Use gpuMemcpyAsync with device pointers instead.\"")
+
 gpuError_t gpuMemset(void* ptr, int value, size_t count);
 gpuError_t gpuMemsetAsync(void* ptr, int value, size_t count, gpuStream_t stream);
 gpuError_t gpuHostRegister(void* ptr, size_t size, unsigned int flags);
