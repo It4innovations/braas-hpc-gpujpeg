@@ -33,10 +33,6 @@
 
 #include "../libgpujpeg/gpujpeg_type.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define GPUJPEG_ORDER_NATURAL_SIZE (64 + 16)
 
 /**
@@ -201,9 +197,5 @@ gpujpeg_table_huffman_decoder_init(struct gpujpeg_table_huffman_decoder* table, 
  */
 void
 gpujpeg_table_huffman_decoder_compute(struct gpujpeg_table_huffman_decoder* table);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // GPUJPEG_TABLE_H

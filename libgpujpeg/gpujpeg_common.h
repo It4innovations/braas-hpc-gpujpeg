@@ -74,10 +74,6 @@
 #define GPUJPEG_DEPRECATED __attribute__((deprecated))
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 // CMake defines implicitly gpujpeg_EXPORTS in Windows (lower-case target name)
 #ifdef gpujpeg_EXPORTS
 #define GPUJPEG_EXPORTS
@@ -543,9 +539,5 @@ gpujpeg_device_reset(void);
 
 GPUJPEG_API const char*
 gpujpeg_orientation_get_name(struct gpujpeg_orientation orientation);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // GPUJPEG_COMMON_H

@@ -42,10 +42,6 @@
 #include <stddef.h>
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 enum y4m_subsampling {
         Y4M_SUBS_MONO = 400,
         Y4M_SUBS_420 = 420,
@@ -68,9 +64,5 @@ struct y4m_metadata {
  */
 size_t y4m_read(const char *filename, struct y4m_metadata *info, unsigned char **data, void *(*allocator)(size_t));
 bool y4m_write(const char *filename, const struct y4m_metadata *info, const unsigned char *data);
-
-#ifdef __cplusplus
-} // extern "C"
-#endif
 
 #endif // defined Y4M_H_DB8BEC68_AA48_4A63_81C3_DC3821F5555B

@@ -33,10 +33,6 @@
 
 #include "gpujpeg_decoder_internal.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /**
  * Init preprocessor decoder
  *
@@ -57,9 +53,5 @@ gpujpeg_postprocessor_decoder_init(struct gpujpeg_coder* coder);
  */
 int
 gpujpeg_postprocessor_decode(struct gpujpeg_coder* coder, gpuStream_t stream);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // GPUJPEG_POSTPROCESSOR_H

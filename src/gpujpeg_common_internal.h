@@ -209,10 +209,6 @@ struct gpujpeg_timer {
 // Forward declaration for timer function
 float gpujpeg_custom_timer_get_duration(gpuEvent_t start, gpuEvent_t stop);
 
-#ifdef __cplusplus
-extern "C" {
-#endif // __cplusplus
-
 // Error string wrapper for HIP compatibility
 const char* gpujpeg_get_error_string(gpuError_t error);
 
@@ -559,10 +555,6 @@ gpujpeg_opt_set_channel_remap(struct gpujpeg_coder* coder, const char* val, cons
 
 int
 gpujpeg_parse_bool_opt(bool* out_var, const char* val, const char* opt);
-
-#ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
 
 #endif // GPUJPEG_COMMON_INTERNAL_H
 

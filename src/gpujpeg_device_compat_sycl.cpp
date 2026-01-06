@@ -139,8 +139,6 @@ namespace gpujpeg_sycl {
     }
 }
 
-extern "C" {
-
 gpuError_t gpuMalloc(void** ptr, size_t size) {
     try {
         if (gpujpeg_sycl::ensure_default_queue() != 0) {
@@ -603,7 +601,5 @@ const char* gpuGetErrorString(gpuError_t error) {
     }
     return "SYCL error";
 }
-
-} // extern "C"
 
 #endif // GPUJPEG_USE_SYCL

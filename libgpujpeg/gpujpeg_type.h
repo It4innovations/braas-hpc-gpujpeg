@@ -43,10 +43,6 @@
 #define ATTRIBUTE_UNUSED
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /**
  * @addtogroup Contants
  * @{
@@ -162,9 +158,5 @@ struct gpujpeg_image_metadata
         unsigned set : 1; ///< item is set, otherwise the union value is undefined
     } vals[GPUJPEG_METADATA_COUNT];
 };
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // GPUJPEG_TYPE_H

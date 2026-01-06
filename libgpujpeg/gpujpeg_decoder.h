@@ -38,10 +38,6 @@
 #include "gpujpeg_common.h"
 #include "gpujpeg_type.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 struct gpujpeg_decoder;
 
 /**
@@ -296,9 +292,5 @@ GPUJPEG_API int
 gpujpeg_decoder_set_option(struct gpujpeg_decoder* decoder, const char *opt, const char* val);
 GPUJPEG_API void
 gpujpeg_decoder_print_options(void);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // GPUJPEG_DECODER_H

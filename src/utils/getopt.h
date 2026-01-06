@@ -36,10 +36,6 @@
 #include <crtdefs.h>
 #include <wchar.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /*
  * GNU-like getopt_long()
  */
@@ -108,10 +104,6 @@ extern int optreset;       /* reset getopt */
 #define _tgetopt_long_only  getopt_long_only
 #define _toption            option
 #define _toptarg            optarg
-#endif
-
-#ifdef __cplusplus
-}
 #endif
 
 #endif /* !_GETOPT_H_ */

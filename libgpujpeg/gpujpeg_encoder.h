@@ -33,10 +33,6 @@
 
 #include "gpujpeg_common.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 struct gpujpeg_encoder;
 
 /**
@@ -242,9 +238,5 @@ gpujpeg_encoder_print_options(void);
  */
 GPUJPEG_API int
 gpujpeg_encoder_destroy(struct gpujpeg_encoder* encoder);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // GPUJPEG_ENCODER_H

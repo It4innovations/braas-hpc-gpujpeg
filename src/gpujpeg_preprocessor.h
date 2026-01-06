@@ -37,11 +37,6 @@
 
 #include "../libgpujpeg/gpujpeg_type.h"
 
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 struct gpujpeg_coder;
 struct gpujpeg_encoder;
 
@@ -121,9 +116,5 @@ gpujpeg_preprocessor_channel_remap(struct gpujpeg_coder* coder);
 
 int
 gpujpeg_preprocessor_flip_lines(struct gpujpeg_coder* coder);
- 
-#ifdef __cplusplus
-}
-#endif
 
 #endif // GPUJPEG_PREPROCESSOR_H

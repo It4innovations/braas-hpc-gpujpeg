@@ -38,10 +38,6 @@
 #include <assert.h>
 #include "gpujpeg_device_compat.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #define GPUJPEG_CLAMP(x, low, high)  (((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
     
 // GPU check error
@@ -92,9 +88,5 @@ struct { int x; int y; int z; } gridDim;
  */
 char*
 format_number_with_delim(size_t num, char* buf, size_t buflen);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // GPUJPEG_UTIL_H

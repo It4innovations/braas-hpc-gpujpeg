@@ -37,10 +37,6 @@
 #include "gpujpeg_table.h"
 #include "gpujpeg_writer.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 struct gpujpeg_huffman_gpu_encoder;
 
 struct gpujpeg_encoder
@@ -63,9 +59,5 @@ struct gpujpeg_encoder
     /// JPEG header to be emitted
     enum gpujpeg_header_type header_type;
 };
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // GPUJPEG_ENCODER_INTERNAL_H

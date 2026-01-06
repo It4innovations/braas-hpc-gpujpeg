@@ -34,10 +34,6 @@
 #include "gpujpeg_encoder_internal.h"
 #include "gpujpeg_decoder_internal.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /**
  * Peform forward DCT on GPU in integers
  *
@@ -53,9 +49,5 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder);
  */
 int
 gpujpeg_idct_gpu(struct gpujpeg_decoder* decoder);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // GPUJPEG_DCT_GPU_H

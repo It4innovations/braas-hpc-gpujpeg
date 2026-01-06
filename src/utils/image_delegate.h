@@ -33,10 +33,6 @@
 
 #include "libgpujpeg/gpujpeg_common.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif // defined __cplusplus
-
 /// @brief malloc-compatible allocator to allocate data
 typedef void *(*allocator_t)(size_t);
 /**
@@ -72,10 +68,6 @@ image_save_delegate_t gpujpeg_get_image_save_delegate(enum gpujpeg_image_file_fo
 
 void
 image_delegate_stbi_tga_set_rle(bool enabled);
-
-#ifdef __cplusplus
-} // extern "C"
-#endif // defined __cplusplus
 
 #endif // ! defined GPUJPEG_IMAGE_DELEGATE_H_0EE4DE91_F6E7_4C02_A4A6_0FFF8C402AE8
 

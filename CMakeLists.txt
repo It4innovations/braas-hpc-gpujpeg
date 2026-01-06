@@ -10,11 +10,11 @@ option(GPUJPEG_USE_SYCL "Build with SYCL backend for Intel/other GPUs" OFF)
 
 # Determine project languages based on GPU backend
 if(GPUJPEG_USE_HIP)
-    project(gpujpeg VERSION 0.27.10 LANGUAGES C CXX)
+    project(gpujpeg VERSION 0.27.10 LANGUAGES CXX)
 elseif(GPUJPEG_USE_SYCL)
-    project(gpujpeg VERSION 0.27.10 LANGUAGES C CXX)
+    project(gpujpeg VERSION 0.27.10 LANGUAGES CXX)
 else()
-    project(gpujpeg VERSION 0.27.10 LANGUAGES C CUDA)
+    project(gpujpeg VERSION 0.27.10 LANGUAGES CXX CUDA)
 endif()
 
 # options
@@ -341,6 +341,7 @@ endif()
 if(NOT IS_SUBMODULE)
     # GPUJPEG commmand-line application
     add_executable(gpujpegtool src/main.cpp)
+    # set_target_properties(gpujpegtool PROPERTIES LINKER_LANGUAGE CXX)
     #target_compile_features(gpujpeg-bin PRIVATE ${NEEDED_COMPILER_FEATURES})
     #set_property(TARGET gpujpeg-bin PROPERTY C_STANDARD 99)
     target_link_libraries(gpujpegtool gpujpeg)
@@ -349,6 +350,7 @@ if(NOT IS_SUBMODULE)
     
     # Test program to generate gradient RGB image
     add_executable(create_rgb_gradient src/create_rgb_gradient.cpp)
+    # set_target_properties(create_rgb_gradient PROPERTIES LINKER_LANGUAGE CXX)
     install(TARGETS create_rgb_gradient DESTINATION bin)
 endif()
 

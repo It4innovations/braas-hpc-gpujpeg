@@ -539,9 +539,6 @@ typedef struct gpuDeviceProp {
 #define gpuSuccess                          0
 
 // Memory management functions - these need to be implemented as wrappers
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 gpuError_t gpuMalloc(void** ptr, size_t size);
 gpuError_t gpuMallocHost(void** ptr, size_t size);
@@ -610,9 +607,6 @@ const char* gpuGetErrorString(gpuError_t error);
 #ifndef GPUART_VERSION
 #define GPUART_VERSION                      0
 #endif
-
-#ifdef __cplusplus
-} // extern "C"
 
 // Forward declare default_queue from gpujpeg_sycl namespace
 namespace gpujpeg_sycl {
@@ -721,8 +715,6 @@ inline void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t sme
 // Macro to get typed pointer to shared memory for SYCL
 #define GPU_SHARED_PTR(type, name, offset) \
     type* name = reinterpret_cast<type*>(_sycl_shared_mem.get_multi_ptr<sycl::access::decorated::no>().get() + (offset))
-
-#endif // __cplusplus
 
 #endif // GPUJPEG_USE_SYCL
 

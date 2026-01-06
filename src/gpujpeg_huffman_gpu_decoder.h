@@ -33,10 +33,6 @@
 
 #include "gpujpeg_decoder_internal.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 struct gpujpeg_huffman_gpu_decoder;
 
 /**
@@ -58,9 +54,5 @@ gpujpeg_huffman_gpu_decoder_destroy(struct gpujpeg_huffman_gpu_decoder *);
  */
 int
 gpujpeg_huffman_gpu_decoder_decode(struct gpujpeg_decoder* decoder);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // GPUJPEG_HUFFMAN_GPU_DECODER_H

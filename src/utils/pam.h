@@ -45,10 +45,6 @@
 #include <stddef.h>
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /// metadata read from file
 struct pam_metadata {
         int width;    ///< image width
@@ -96,9 +92,5 @@ enum {
 bool pam_write(const char *filename, unsigned int width, unsigned int pitch,
                unsigned int height, int ch_count, int maxval,
                const unsigned char *data, bool pnm);
-
-#ifdef __cplusplus
-} // extern "C"
-#endif
 
 #endif // defined PAM_H_7E23A609_963A_45A8_88E2_ED4D3FDFF69F

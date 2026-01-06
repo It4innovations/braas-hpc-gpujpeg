@@ -34,10 +34,6 @@
 #include <stddef.h>  // for size_t
 #include <stdint.h>  // for uint8_t
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /** JPEG decoder structure predeclaration */
 struct gpujpeg_decoder;
 struct gpujpeg_image_info; // declared in libgpujpeg/gpujpeg_decoder.h
@@ -70,9 +66,5 @@ gpujpeg_reader_read_image(struct gpujpeg_decoder* decoder, uint8_t* image, size_
  */
 int
 gpujpeg_reader_get_image_info(uint8_t *image, size_t image_size, struct gpujpeg_image_info *info, int verbose, unsigned flags);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // GPUJPEG_READER_H
