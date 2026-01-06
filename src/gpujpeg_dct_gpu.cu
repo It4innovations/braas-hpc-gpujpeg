@@ -162,11 +162,7 @@ gpujpeg_dct_gpu(const T in0, const T in1, const T in2, const T in3, const T in4,
 }
 
 /** Constant memory copy of transposed quantization table pre-divided with DCT output weights. */
-#ifdef GPUJPEG_USE_SYCL
 float* gpujpeg_dct_gpu_quantization_table_const = NULL;
-#else
-GPU_CONSTANT float gpujpeg_dct_gpu_quantization_table_const[64];
-#endif
 
 /**
  * Performs 8x8 block-wise Forward Discrete Cosine Transform of the given
@@ -316,11 +312,7 @@ template GPU_GLOBAL void gpujpeg_dct_gpu_kernel<4>(GPU_KERNEL_ITEM_PARAM GPU_SHA
 
 /** Quantization table */
 //TODO zmenit na float
-#ifdef GPUJPEG_USE_SYCL
 uint16_t* gpujpeg_idct_gpu_quantization_table = NULL;
-#else
-GPU_CONSTANT uint16_t gpujpeg_idct_gpu_quantization_table[64];
-#endif
 
 #if !GPUJPEG_IDCT_USE_ASM
 
@@ -664,10 +656,9 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder)
         enum gpujpeg_component_type type = encoder->coder.component[comp].type;
         const float* const d_quantization_table = encoder->table_quantization[type].d_table_forward;
 
-        // copy the quantization table into constant memory for devices of CC < 2.0
+        // copy the quantization table into memory for devices of CC < 2.0 (only allocate once)
         if( encoder->coder.cuda_cc_major < 2 ) {
-#ifdef GPUJPEG_USE_SYCL
-            // Allocate memory for quantization table if not already allocated
+            // Allocate memory for quantization table if not already allocated (global resource)
             if (gpujpeg_dct_gpu_quantization_table_const == NULL) {
                 if (gpuMalloc((void**)&gpujpeg_dct_gpu_quantization_table_const, 64 * sizeof(float)) != gpuSuccess) {
                     gpujpeg_cuda_check_error("Allocation of DCT quantization table failed", return -1);
@@ -682,18 +673,6 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder)
             ) != gpuSuccess)
                 return -1;
             gpujpeg_cuda_check_error("Quantization table memcpy failed", return -1);
-#else
-            if (gpuMemcpyToSymbolAsync(
-                gpujpeg_dct_gpu_quantization_table_const,
-                d_quantization_table,
-                sizeof(gpujpeg_dct_gpu_quantization_table_const),
-                0,
-                gpuMemcpyDeviceToDevice,
-                coder->stream
-            ) != gpuSuccess)
-                return -1;
-            gpujpeg_cuda_check_error("Quantization table memcpy failed", return -1);
-#endif
         }
 
         int roi_width = component->data_width;
@@ -758,9 +737,8 @@ gpujpeg_idct_gpu(struct gpujpeg_decoder* decoder)
         // Get quantization table
         uint16_t* d_quantization_table = decoder->table_quantization[decoder->comp_table_quantization_map[comp]].d_table;
 
-        // Copy quantization table to constant memory
-#ifdef GPUJPEG_USE_SYCL
-        // Allocate memory for quantization table if not already allocated
+        // Copy quantization table to memory
+        // Allocate memory for quantization table if not already allocated (only once - global resource)
         if (gpujpeg_idct_gpu_quantization_table == NULL) {
             if (gpuMalloc((void**)&gpujpeg_idct_gpu_quantization_table, 64 * sizeof(uint16_t)) != gpuSuccess) {
                 gpujpeg_cuda_check_error("Allocation of IDCT quantization table failed", return -1);
@@ -775,18 +753,6 @@ gpujpeg_idct_gpu(struct gpujpeg_decoder* decoder)
         ) != gpuSuccess)
             return -1;
         gpujpeg_cuda_check_error("Copy IDCT quantization table to memory", return -1);
-#else
-        if (gpuMemcpyToSymbolAsync(
-            gpujpeg_idct_gpu_quantization_table,
-            d_quantization_table,
-            64 * sizeof(uint16_t),
-            0,
-            gpuMemcpyDeviceToDevice,
-            coder->stream
-        ) != gpuSuccess)
-            return -1;
-        gpujpeg_cuda_check_error("Copy IDCT quantization table to constant memory", return -1);
-#endif
 
         // Calculate shared memory size for IDCT
         size_t shared_mem_size_idct = GPUJPEG_IDCT_BLOCK_Z * 8 * GPUJPEG_IDCT_BLOCK_Y * (GPUJPEG_IDCT_BLOCK_X + 1) * sizeof(float);

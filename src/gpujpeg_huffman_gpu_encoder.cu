@@ -36,11 +36,7 @@
 #define WARPS_NUM 8
 
 /** Natural order in constant memory */
-#ifdef GPUJPEG_USE_SYCL
-int* gpujpeg_huffman_gpu_encoder_order_natural;
-#else
-GPU_CONSTANT int gpujpeg_huffman_gpu_encoder_order_natural[GPUJPEG_ORDER_NATURAL_SIZE];
-#endif
+int* gpujpeg_huffman_gpu_encoder_order_natural = NULL;
 
 /**
  * Huffman coding tables in constant memory - each has 257 items (256 + 1 extra)
@@ -50,28 +46,16 @@ GPU_CONSTANT int gpujpeg_huffman_gpu_encoder_order_natural[GPUJPEG_ORDER_NATURAL
  *    - chroma (cb/cr) AC
  *    - chroma (cb/cr) DC
  */
-#ifdef GPUJPEG_USE_SYCL
-uint32_t* gpujpeg_huffman_gpu_lut;
-#else
-GPU_DEVICE uint32_t gpujpeg_huffman_gpu_lut[(256 + 1) * 4];
-#endif
+uint32_t* gpujpeg_huffman_gpu_lut = NULL;
 
 /**
  * Value decomposition in constant memory (input range from -4096 to 4095  ... both inclusive)
  * Mapping from coefficient value into the code for the value ind its bit size.
  */
-#ifdef GPUJPEG_USE_SYCL
-unsigned int* gpujpeg_huffman_value_decomposition;
-#else
-GPU_DEVICE unsigned int gpujpeg_huffman_value_decomposition[8 * 1024];
-#endif
+unsigned int* gpujpeg_huffman_value_decomposition = NULL;
 
 /** Allocate huffman tables in constant memory */
-#ifdef GPUJPEG_USE_SYCL
-struct gpujpeg_table_huffman_encoder* gpujpeg_huffman_gpu_encoder_table_huffman;
-#else
-GPU_DEVICE struct gpujpeg_table_huffman_encoder gpujpeg_huffman_gpu_encoder_table_huffman[GPUJPEG_COMPONENT_TYPE_COUNT][GPUJPEG_HUFFMAN_TYPE_COUNT];
-#endif
+struct gpujpeg_table_huffman_encoder* gpujpeg_huffman_gpu_encoder_table_huffman = NULL;
 
 struct gpujpeg_huffman_gpu_encoder
 {
@@ -83,13 +67,8 @@ struct gpujpeg_huffman_gpu_encoder
  * Initializes coefficient decomposition table in global memory.  (CC >= 2.0)
  * Output table is a mapping from some value into its code and bit size.
  */
-#ifdef GPUJPEG_USE_SYCL
 GPU_GLOBAL static void
 gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA unsigned int * _gpujpeg_huffman_value_decomposition){
-#else
-GPU_GLOBAL static void
-gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM){
-#endif
     // fetch some value
     const int tid = GPU_THREAD_IDX_X + GPU_BLOCK_IDX_X * GPU_BLOCK_DIM_X;
     const int value = tid - 4096;
@@ -116,11 +95,7 @@ gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel(GPU_KERNEL_ITEM_PARA
     // Avoid undefined behavior: shifting by 32 bits is UB for 32-bit types
     unsigned int shifted_code = (value_nbits == 0) ? 0 : (value_code << (32 - value_nbits));
 
-#ifdef GPUJPEG_USE_SYCL
     _gpujpeg_huffman_value_decomposition[tid] = value_nbits | shifted_code;
-#else
-    gpujpeg_huffman_value_decomposition[tid] = value_nbits | shifted_code;
-#endif
 }
 
 #if defined(__CUDACC__) && __CUDA_ARCH__ >= 200 //|| defined(__HIP_DEVICE_COMPILE__) || defined(SYCL_DEVICE_ONLY)
@@ -166,10 +141,12 @@ gpujpeg_huffman_gpu_encoder_emit_bits(unsigned int & remaining_bits, int & byte_
  */
 GPU_DEVICE static unsigned int
 gpujpeg_huffman_gpu_encode_value(const int preceding_zero_count, const int coefficient,
-                                 const int huffman_lut_offset)
+                                 const int huffman_lut_offset,
+                                 const unsigned int* value_decomposition,
+                                 const uint32_t* huffman_lut)
 {
     // value bits are in MSBs (left aligned) and bit size of the value is in LSBs (right aligned)
-    const unsigned int packed_value = gpujpeg_huffman_value_decomposition[4096 + coefficient];
+    const unsigned int packed_value = value_decomposition[4096 + coefficient];
 
     // decompose value info into upshifted value and value's bit size
     const int value_nbits = packed_value & 0xf;
@@ -177,7 +154,7 @@ gpujpeg_huffman_gpu_encode_value(const int preceding_zero_count, const int coeff
 
     // find prefix of the codeword and size of the prefix
     const int huffman_lut_idx = huffman_lut_offset + preceding_zero_count * 16 + value_nbits;
-    const unsigned int packed_prefix = gpujpeg_huffman_gpu_lut[huffman_lut_idx];
+    const unsigned int packed_prefix = huffman_lut[huffman_lut_idx];
     const unsigned int prefix_nbits = packed_prefix & 31;
 
     // compose packed codeword with its size
@@ -219,12 +196,13 @@ gpujpeg_huffman_gpu_encoder_flush_codewords(unsigned int * const s_out, unsigned
  */
 GPU_DEVICE static int
 gpujpeg_huffman_gpu_encoder_encode_block(const int16_t * block, unsigned int * &data_compressed, unsigned int * const s_out,
-                int & remaining_codewords, const int last_dc_idx, int tid, const int huffman_lut_offset)
+                int & remaining_codewords, const int last_dc_idx, int tid, const int huffman_lut_offset,
+                const int* order_natural, const unsigned int* value_decomposition, const uint32_t* huffman_lut)
 {
     // each thread loads a pair of values (pair after zigzag reordering)
     const int load_idx = tid * 2;
-    int in_even = block[gpujpeg_huffman_gpu_encoder_order_natural[load_idx]];
-    const int in_odd = block[gpujpeg_huffman_gpu_encoder_order_natural[load_idx + 1]];
+    int in_even = block[order_natural[load_idx]];
+    const int in_odd = block[order_natural[load_idx + 1]];
 
     // compute preceding zero count for even coefficient (actually compute the count multiplied by 16)
     const unsigned int nonzero_mask = (1 << tid) - 1;
@@ -274,8 +252,8 @@ gpujpeg_huffman_gpu_encoder_encode_block(const int16_t * block, unsigned int * &
     }
 
     // each thread gets codeword for its two pixels
-    unsigned int even_code = gpujpeg_huffman_gpu_encode_value(zeros_before_even, in_even, even_lut_offset);
-    unsigned int odd_code = gpujpeg_huffman_gpu_encode_value(zeros_before_odd, in_odd, huffman_lut_offset);
+    unsigned int even_code = gpujpeg_huffman_gpu_encode_value(zeros_before_even, in_even, even_lut_offset, value_decomposition, huffman_lut);
+    unsigned int odd_code = gpujpeg_huffman_gpu_encode_value(zeros_before_odd, in_odd, huffman_lut_offset, value_decomposition, huffman_lut);
 
     // concatenate both codewords into one if they are short enough
     const unsigned int even_code_size = even_code & 31;
@@ -339,7 +317,10 @@ gpujpeg_huffman_encoder_encode_kernel_warp(
     int16_t* const d_data_quantized,
     struct gpujpeg_component* const d_component,
     const int comp_count,
-    unsigned int * d_gpujpeg_huffman_output_byte_count
+    unsigned int * d_gpujpeg_huffman_output_byte_count,
+    const int* order_natural,
+    const unsigned int* value_decomposition,
+    const uint32_t* huffman_lut
 ) {
 #if defined(__CUDACC__) && __CUDA_ARCH__ >= 200 //|| defined(__HIP_DEVICE_COMPILE__) || defined(SYCL_DEVICE_ONLY)
     int warpidx = GPU_THREAD_IDX_X >> 5;
@@ -399,7 +380,8 @@ gpujpeg_huffman_encoder_encode_kernel_warp(
         // Encode MCUs in segment
         for (int block_count = segment->mcu_count; block_count--;) {
             // Encode 8x8 block
-            gpujpeg_huffman_gpu_encoder_encode_block(block, data_compressed, s_out, remaining_codewords, 256, tid, huffman_table_offset);
+            gpujpeg_huffman_gpu_encoder_encode_block(block, data_compressed, s_out, remaining_codewords, 256, tid, huffman_table_offset,
+                order_natural, value_decomposition, huffman_lut);
 
             // Advance to next block
             block += comp_mcu_size;
@@ -423,7 +405,8 @@ gpujpeg_huffman_encoder_encode_kernel_warp(
             int16_t* block = &d_data_quantized[packed_block_info >> 8];
 
             // Encode 8x8 block
-            gpujpeg_huffman_gpu_encoder_encode_block(block, data_compressed, s_out, remaining_codewords, last_dc_idx, tid, huffman_table_offset);
+            gpujpeg_huffman_gpu_encoder_encode_block(block, data_compressed, s_out, remaining_codewords, last_dc_idx, tid, huffman_table_offset,
+                order_natural, value_decomposition, huffman_lut);
         }
     }
 
@@ -779,10 +762,8 @@ gpujpeg_huffman_gpu_encoder_emit_left_bits(int & put_value, int & put_bits, uint
  */
 GPU_DEVICE static int
 gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA int & put_value, int & put_bits, int & dc, int16_t* data, uint8_t* & data_compressed,
-    const struct gpujpeg_table_huffman_encoder* d_table_dc, const struct gpujpeg_table_huffman_encoder* d_table_ac
-#ifdef GPUJPEG_USE_SYCL
-    , int* _gpujpeg_huffman_gpu_encoder_order_natural
-#endif
+    const struct gpujpeg_table_huffman_encoder* d_table_dc, const struct gpujpeg_table_huffman_encoder* d_table_ac,
+    int* _gpujpeg_huffman_gpu_encoder_order_natural
 )
 {
     typedef uint64_t loading_t;
@@ -834,11 +815,7 @@ gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PA
     int r = 0;
     for ( int k = 1; k < 64; k++ )
     {
-#ifdef GPUJPEG_USE_SYCL
         temp = s_data[data_start + _gpujpeg_huffman_gpu_encoder_order_natural[k]];
-#else
-        temp = s_data[data_start + gpujpeg_huffman_gpu_encoder_order_natural[k]];
-#endif
         if ( temp == 0 ) {
             r++;
         }
@@ -899,11 +876,9 @@ gpujpeg_huffman_encoder_encode_kernel(
     int comp_count,
     int segment_count,
     uint8_t* d_data_compressed,
-    unsigned int * d_gpujpeg_huffman_output_byte_count
-#ifdef GPUJPEG_USE_SYCL
-    , int* _gpujpeg_huffman_gpu_encoder_order_natural,
+    unsigned int * d_gpujpeg_huffman_output_byte_count,
+    int* _gpujpeg_huffman_gpu_encoder_order_natural,
     struct gpujpeg_table_huffman_encoder* _gpujpeg_huffman_gpu_encoder_table_huffman
-#endif
 )
 {
     int segment_index = GPU_BLOCK_IDX_X * GPU_BLOCK_DIM_X + GPU_THREAD_IDX_X;
@@ -945,7 +920,6 @@ gpujpeg_huffman_encoder_encode_kernel(
             // Get huffman tables
             const struct gpujpeg_table_huffman_encoder* d_table_dc = NULL;
             const struct gpujpeg_table_huffman_encoder* d_table_ac = NULL;
-#ifdef GPUJPEG_USE_SYCL
             if ( component->type == GPUJPEG_COMPONENT_LUMINANCE ) {
                 d_table_dc = &_gpujpeg_huffman_gpu_encoder_table_huffman[(int)GPUJPEG_COMPONENT_LUMINANCE * (int)GPUJPEG_HUFFMAN_TYPE_COUNT + (int)GPUJPEG_HUFFMAN_DC];
                 d_table_ac = &_gpujpeg_huffman_gpu_encoder_table_huffman[(int)GPUJPEG_COMPONENT_LUMINANCE * (int)GPUJPEG_HUFFMAN_TYPE_COUNT + (int)GPUJPEG_HUFFMAN_AC];
@@ -953,21 +927,10 @@ gpujpeg_huffman_encoder_encode_kernel(
                 d_table_dc = &_gpujpeg_huffman_gpu_encoder_table_huffman[(int)GPUJPEG_COMPONENT_CHROMINANCE * (int)GPUJPEG_HUFFMAN_TYPE_COUNT + (int)GPUJPEG_HUFFMAN_DC];
                 d_table_ac = &_gpujpeg_huffman_gpu_encoder_table_huffman[(int)GPUJPEG_COMPONENT_CHROMINANCE * (int)GPUJPEG_HUFFMAN_TYPE_COUNT + (int)GPUJPEG_HUFFMAN_AC];
             }
-#else
-            if ( component->type == GPUJPEG_COMPONENT_LUMINANCE ) {
-                d_table_dc = &gpujpeg_huffman_gpu_encoder_table_huffman[GPUJPEG_COMPONENT_LUMINANCE][GPUJPEG_HUFFMAN_DC];
-                d_table_ac = &gpujpeg_huffman_gpu_encoder_table_huffman[GPUJPEG_COMPONENT_LUMINANCE][GPUJPEG_HUFFMAN_AC];
-            } else {
-                d_table_dc = &gpujpeg_huffman_gpu_encoder_table_huffman[GPUJPEG_COMPONENT_CHROMINANCE][GPUJPEG_HUFFMAN_DC];
-                d_table_ac = &gpujpeg_huffman_gpu_encoder_table_huffman[GPUJPEG_COMPONENT_CHROMINANCE][GPUJPEG_HUFFMAN_AC];
-            }
-#endif
 
             // Encode 8x8 block
-            if ( gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_ARG GPU_SHARED_MEM_ARG GPU_ITEM_COMMA put_value, put_bits, component_dc, block, data_compressed, d_table_dc, d_table_ac
-#ifdef GPUJPEG_USE_SYCL
-                , _gpujpeg_huffman_gpu_encoder_order_natural
-#endif
+            if ( gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_ARG GPU_SHARED_MEM_ARG GPU_ITEM_COMMA put_value, put_bits, component_dc, block, data_compressed, d_table_dc, d_table_ac,
+                _gpujpeg_huffman_gpu_encoder_order_natural
             ) != 0 )
                 break;
         }
@@ -1005,7 +968,6 @@ gpujpeg_huffman_encoder_encode_kernel(
                         // Get huffman tables
                         const struct gpujpeg_table_huffman_encoder* d_table_dc = NULL;
                         const struct gpujpeg_table_huffman_encoder* d_table_ac = NULL;
-#ifdef GPUJPEG_USE_SYCL
                         if ( component->type == GPUJPEG_COMPONENT_LUMINANCE ) {
                             d_table_dc = &_gpujpeg_huffman_gpu_encoder_table_huffman[(int)GPUJPEG_COMPONENT_LUMINANCE * (int)GPUJPEG_HUFFMAN_TYPE_COUNT + (int)GPUJPEG_HUFFMAN_DC];
                             d_table_ac = &_gpujpeg_huffman_gpu_encoder_table_huffman[(int)GPUJPEG_COMPONENT_LUMINANCE * (int)GPUJPEG_HUFFMAN_TYPE_COUNT + (int)GPUJPEG_HUFFMAN_AC];
@@ -1013,21 +975,10 @@ gpujpeg_huffman_encoder_encode_kernel(
                             d_table_dc = &_gpujpeg_huffman_gpu_encoder_table_huffman[(int)GPUJPEG_COMPONENT_CHROMINANCE * (int)GPUJPEG_HUFFMAN_TYPE_COUNT + (int)GPUJPEG_HUFFMAN_DC];
                             d_table_ac = &_gpujpeg_huffman_gpu_encoder_table_huffman[(int)GPUJPEG_COMPONENT_CHROMINANCE * (int)GPUJPEG_HUFFMAN_TYPE_COUNT + (int)GPUJPEG_HUFFMAN_AC];
                         }
-#else
-                        if ( component->type == GPUJPEG_COMPONENT_LUMINANCE ) {
-                            d_table_dc = &gpujpeg_huffman_gpu_encoder_table_huffman[GPUJPEG_COMPONENT_LUMINANCE][GPUJPEG_HUFFMAN_DC];
-                            d_table_ac = &gpujpeg_huffman_gpu_encoder_table_huffman[GPUJPEG_COMPONENT_LUMINANCE][GPUJPEG_HUFFMAN_AC];
-                        } else {
-                            d_table_dc = &gpujpeg_huffman_gpu_encoder_table_huffman[GPUJPEG_COMPONENT_CHROMINANCE][GPUJPEG_HUFFMAN_DC];
-                            d_table_ac = &gpujpeg_huffman_gpu_encoder_table_huffman[GPUJPEG_COMPONENT_CHROMINANCE][GPUJPEG_HUFFMAN_AC];
-                        }
-#endif
 
                         // Encode 8x8 block
-                        gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_ARG GPU_SHARED_MEM_ARG GPU_ITEM_COMMA put_value, put_bits, component_dc, block, data_compressed, d_table_dc, d_table_ac
-#ifdef GPUJPEG_USE_SYCL
-                            , _gpujpeg_huffman_gpu_encoder_order_natural
-#endif
+                        gpujpeg_huffman_gpu_encoder_encode_block(GPU_KERNEL_ITEM_ARG GPU_SHARED_MEM_ARG GPU_ITEM_COMMA put_value, put_bits, component_dc, block, data_compressed, d_table_dc, d_table_ac,
+                            _gpujpeg_huffman_gpu_encoder_order_natural
                         );
                     }
                 }
@@ -1079,29 +1030,35 @@ gpujpeg_huffman_gpu_encoder_create(const struct gpujpeg_encoder * encoder)
     if (gpuMalloc((void**)&huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count, sizeof(unsigned int)) != gpuSuccess)
         gpujpeg_cuda_check_error("Allocation of huffman output byte count failed", return NULL);
 
-#ifdef GPUJPEG_USE_SYCL
-    // Allocate GPU memory for SYCL
-    if (gpuMalloc((void**)&gpujpeg_huffman_gpu_encoder_order_natural, GPUJPEG_ORDER_NATURAL_SIZE * sizeof(int)) != gpuSuccess)
-        gpujpeg_cuda_check_error("Allocation of huffman order natural failed", return NULL);
-    if (gpuMalloc((void**)&gpujpeg_huffman_gpu_lut, (256 + 1) * 4 * sizeof(uint32_t)) != gpuSuccess)
-        gpujpeg_cuda_check_error("Allocation of huffman GPU LUT failed", return NULL);
-    if (gpuMalloc((void**)&gpujpeg_huffman_value_decomposition, 8 * 1024 * sizeof(unsigned int)) != gpuSuccess)
-        gpujpeg_cuda_check_error("Allocation of huffman value decomposition failed", return NULL);
-    if (gpuMalloc((void**)&gpujpeg_huffman_gpu_encoder_table_huffman, (int)GPUJPEG_COMPONENT_TYPE_COUNT * (int)GPUJPEG_HUFFMAN_TYPE_COUNT * sizeof(struct gpujpeg_table_huffman_encoder)) != gpuSuccess)
-        gpujpeg_cuda_check_error("Allocation of huffman encoder table failed", return NULL);
-#endif
+    // Allocate GPU memory (only once - these are shared global resources)
+    if (gpujpeg_huffman_gpu_encoder_order_natural == NULL) {
+        if (gpuMalloc((void**)&gpujpeg_huffman_gpu_encoder_order_natural, GPUJPEG_ORDER_NATURAL_SIZE * sizeof(int)) != gpuSuccess)
+            gpujpeg_cuda_check_error("Allocation of huffman order natural failed", return NULL);
+    }
+    if (gpujpeg_huffman_gpu_lut == NULL) {
+        if (gpuMalloc((void**)&gpujpeg_huffman_gpu_lut, (256 + 1) * 4 * sizeof(uint32_t)) != gpuSuccess)
+            gpujpeg_cuda_check_error("Allocation of huffman GPU LUT failed", return NULL);
+    }
+    if (gpujpeg_huffman_value_decomposition == NULL) {
+        if (gpuMalloc((void**)&gpujpeg_huffman_value_decomposition, 8 * 1024 * sizeof(unsigned int)) != gpuSuccess)
+            gpujpeg_cuda_check_error("Allocation of huffman value decomposition failed", return NULL);
+    }
+    if (gpujpeg_huffman_gpu_encoder_table_huffman == NULL) {
+        if (gpuMalloc((void**)&gpujpeg_huffman_gpu_encoder_table_huffman, (int)GPUJPEG_COMPONENT_TYPE_COUNT * (int)GPUJPEG_HUFFMAN_TYPE_COUNT * sizeof(struct gpujpeg_table_huffman_encoder)) != gpuSuccess)
+            gpujpeg_cuda_check_error("Allocation of huffman encoder table failed", return NULL);
+    }
 
-    // Initialize decomposition lookup table on GPU
-    (void)gpuFuncSetCacheConfig((const void*)gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel, gpuFuncCachePreferShared);
-#ifdef GPUJPEG_USE_SYCL
-    // Capture global pointers in local variables for SYCL kernel launch
-    unsigned int* local_value_decomp = gpujpeg_huffman_value_decomposition;
-    GPU_KERNEL_LAUNCH(gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel, 32, 256, 0, coder->stream, local_value_decomp);  // 8192 threads total
-#else
-    GPU_KERNEL_LAUNCH(gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel, 32, 256, 0, coder->stream);  // 8192 threads total
-#endif
-    if (gpuStreamSynchronize(coder->stream) != gpuSuccess)
-        gpujpeg_cuda_check_error("Decomposition LUT initialization failed", return NULL);
+    // Initialize decomposition lookup table on GPU (only once)
+    static bool value_decomposition_initialized = false;
+    if (!value_decomposition_initialized) {
+        (void)gpuFuncSetCacheConfig((const void*)gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel, gpuFuncCachePreferShared);
+        // Capture global pointer in local variable for kernel launch
+        unsigned int* local_value_decomp = gpujpeg_huffman_value_decomposition;
+        GPU_KERNEL_LAUNCH(gpujpeg_huffman_gpu_encoder_value_decomposition_init_kernel, 32, 256, 0, coder->stream, local_value_decomp);  // 8192 threads total
+        if (gpuStreamSynchronize(coder->stream) != gpuSuccess)
+            gpujpeg_cuda_check_error("Decomposition LUT initialization failed", return NULL);
+        value_decomposition_initialized = true;
+    }
 
     // compose GPU version of the huffman LUT and copy it into GPU memory (for CC >= 2.0)
     uint32_t gpujpeg_huffman_cpu_lut[(256 + 1) * 4];
@@ -1109,7 +1066,6 @@ gpujpeg_huffman_gpu_encoder_create(const struct gpujpeg_encoder * encoder)
     gpujpeg_huffman_gpu_add_packed_table(gpujpeg_huffman_cpu_lut + 257 * 1, &encoder->table_huffman[GPUJPEG_COMPONENT_LUMINANCE][GPUJPEG_HUFFMAN_DC], false);
     gpujpeg_huffman_gpu_add_packed_table(gpujpeg_huffman_cpu_lut + 257 * 2, &encoder->table_huffman[GPUJPEG_COMPONENT_CHROMINANCE][GPUJPEG_HUFFMAN_AC], true);
     gpujpeg_huffman_gpu_add_packed_table(gpujpeg_huffman_cpu_lut + 257 * 3, &encoder->table_huffman[GPUJPEG_COMPONENT_CHROMINANCE][GPUJPEG_HUFFMAN_DC], false);
-#ifdef GPUJPEG_USE_SYCL
     if (gpuMemcpy(
         gpujpeg_huffman_gpu_lut,
         gpujpeg_huffman_cpu_lut,
@@ -1117,19 +1073,8 @@ gpujpeg_huffman_gpu_encoder_create(const struct gpujpeg_encoder * encoder)
         gpuMemcpyHostToDevice
     ) != gpuSuccess)
         gpujpeg_cuda_check_error("Huffman encoder init (Huffman LUT copy)", return NULL);
-#else
-    if (gpuMemcpyToSymbol(
-        gpujpeg_huffman_gpu_lut,
-        gpujpeg_huffman_cpu_lut,
-        (256 + 1) * 4 * sizeof(*gpujpeg_huffman_gpu_lut),
-        0,
-        gpuMemcpyHostToDevice
-    ) != gpuSuccess)
-        gpujpeg_cuda_check_error("Huffman encoder init (Huffman LUT copy)", return NULL);
-#endif
 
     // Copy original Huffman coding tables to GPU memory (for CC 1.x)
-#ifdef GPUJPEG_USE_SYCL
     if (gpuMemcpy(
         gpujpeg_huffman_gpu_encoder_table_huffman,
         &encoder->table_huffman[GPUJPEG_COMPONENT_LUMINANCE][GPUJPEG_HUFFMAN_DC],
@@ -1137,19 +1082,8 @@ gpujpeg_huffman_gpu_encoder_create(const struct gpujpeg_encoder * encoder)
         gpuMemcpyHostToDevice
     ) != gpuSuccess)
         gpujpeg_cuda_check_error("Huffman encoder init (Huffman coding table)", return NULL);
-#else
-    if (gpuMemcpyToSymbol(
-        gpujpeg_huffman_gpu_encoder_table_huffman,
-        &encoder->table_huffman[GPUJPEG_COMPONENT_LUMINANCE][GPUJPEG_HUFFMAN_DC],
-        sizeof(gpujpeg_huffman_gpu_encoder_table_huffman),
-        0,
-        gpuMemcpyHostToDevice
-    ) != gpuSuccess)
-        gpujpeg_cuda_check_error("Huffman encoder init (Huffman coding table)", return NULL);
-#endif
 
-    // Copy natural order to constant device memory
-#ifdef GPUJPEG_USE_SYCL
+    // Copy natural order to device memory
     if (gpuMemcpy(
         gpujpeg_huffman_gpu_encoder_order_natural,
         gpujpeg_order_natural,
@@ -1157,16 +1091,6 @@ gpujpeg_huffman_gpu_encoder_create(const struct gpujpeg_encoder * encoder)
         gpuMemcpyHostToDevice
     ) != gpuSuccess)
         gpujpeg_cuda_check_error("Huffman encoder init (natural order copy)", return NULL);
-#else
-    if (gpuMemcpyToSymbol(
-        gpujpeg_huffman_gpu_encoder_order_natural,
-        gpujpeg_order_natural,
-        GPUJPEG_ORDER_NATURAL_SIZE * sizeof(int),
-        0,
-        gpuMemcpyHostToDevice
-    ) != gpuSuccess)
-        gpujpeg_cuda_check_error("Huffman encoder init (natural order copy)", return NULL);
-#endif
 
     // Configure more shared memory for all kernels
     (void)gpuFuncSetCacheConfig((const void*)(gpujpeg_huffman_encoder_encode_kernel_warp<true>), gpuFuncCachePreferShared);
@@ -1188,8 +1112,7 @@ gpujpeg_huffman_gpu_encoder_destroy(struct gpujpeg_huffman_gpu_encoder * huffman
         (void)gpuFree(huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count);
     }
 
-#ifdef GPUJPEG_USE_SYCL
-    // Free GPU memory for SYCL
+    // Free GPU memory
     if (gpujpeg_huffman_gpu_encoder_order_natural != NULL) {
         (void)gpuFree(gpujpeg_huffman_gpu_encoder_order_natural);
         gpujpeg_huffman_gpu_encoder_order_natural = NULL;
@@ -1206,7 +1129,6 @@ gpujpeg_huffman_gpu_encoder_destroy(struct gpujpeg_huffman_gpu_encoder * huffman
         (void)gpuFree(gpujpeg_huffman_gpu_encoder_table_huffman);
         gpujpeg_huffman_gpu_encoder_table_huffman = NULL;
     }
-#endif
 
     free(huffman_gpu_encoder);
 }
@@ -1254,8 +1176,7 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
         // Run kernel
         dim3 thread(THREAD_BLOCK_SIZE);
         dim3 grid(gpujpeg_div_and_round_up(coder->segment_count, thread.x));
-#ifdef GPUJPEG_USE_SYCL
-        // Capture global pointers in local variables for SYCL kernel launch
+        // Capture global pointers in local variables for kernel launch
         int* local_order_natural = gpujpeg_huffman_gpu_encoder_order_natural;
         struct gpujpeg_table_huffman_encoder* local_table_huffman = gpujpeg_huffman_gpu_encoder_table_huffman;
         GPU_KERNEL_LAUNCH(gpujpeg_huffman_encoder_encode_kernel, grid, thread, shared_mem_size_encode, coder->stream,
@@ -1268,16 +1189,6 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
             local_order_natural,
             local_table_huffman
         );
-#else
-        GPU_KERNEL_LAUNCH(gpujpeg_huffman_encoder_encode_kernel, grid, thread, shared_mem_size_encode, coder->stream,
-            coder->d_component,
-            coder->d_segment,
-            comp_count,
-            coder->segment_count,
-            coder->d_temp_huffman,
-            huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count
-        );
-#endif
         gpujpeg_cuda_check_error("Huffman encoding failed", return -1);
     } else {
         // Calculate shared memory size for warp encoder
@@ -1296,7 +1207,10 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
                 coder->d_data_quantized,
                 coder->d_component,
                 comp_count,
-                huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count
+                huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count,
+                gpujpeg_huffman_gpu_encoder_order_natural,
+                gpujpeg_huffman_value_decomposition,
+                gpujpeg_huffman_gpu_lut
             );
             gpujpeg_cuda_check_error("Huffman encoding failed", return -1);
         } else {
@@ -1308,7 +1222,10 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
                 coder->d_data_quantized,
                 coder->d_component,
                 comp_count,
-                huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count
+                huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count,
+                gpujpeg_huffman_gpu_encoder_order_natural,
+                gpujpeg_huffman_value_decomposition,
+                gpujpeg_huffman_gpu_lut
             );
             gpujpeg_cuda_check_error("Huffman encoding failed", return -1);
         }
