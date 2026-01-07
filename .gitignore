@@ -36,6 +36,7 @@ stamp-h1
 libgpujpeg.la
 tags
 test-driver
+test/test_sycl
 
 # VS
 *.pdb

@@ -374,10 +374,6 @@ static inline unsigned int GPU_DIM_Z(unsigned int d) { return 1u; }
 // This is a simplified compatibility layer - full SYCL support would require
 // more extensive refactoring
 
-namespace gpujpeg_sycl {
-    extern sycl::queue* default_queue;
-}
-
 #ifndef half
 #define half sycl::half
 #endif
@@ -575,7 +571,7 @@ enum {
 
 // Stream management
 #ifdef __cplusplus
-#define gpuStreamDefault                    (gpujpeg_sycl::default_queue)
+#define gpuStreamDefault                    (gpujpeg_sycl::get_current_queue())
 #else
 #define gpuStreamDefault                    ((gpuStream_t)0)
 #endif
@@ -608,14 +604,13 @@ const char* gpuGetErrorString(gpuError_t error);
 #define GPUART_VERSION                      0
 #endif
 
-// Forward declare default_queue from gpujpeg_sycl namespace
+// Forward declare from gpujpeg_sycl namespace
 namespace gpujpeg_sycl {
-    extern sycl::queue* default_queue;
     // Async exception handler declaration
     extern sycl::async_handler async_handler;
 
-    // Ensure default SYCL queue is initialized
-    int ensure_default_queue();
+    // Get the queue for the current device
+    sycl::queue* get_current_queue();
 }
 
 // Kernel launch - SYCL uses queue.submit with parallel_for
@@ -637,13 +632,9 @@ inline void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t sme
               << std::endl;
 #endif
 
-    // Use default queue if q is null
+    // Use current device queue if q is null
     if (!q) {
-        if (gpujpeg_sycl::ensure_default_queue() != 0) {
-            std::cerr << "[SYCL KERNEL LAUNCH] Error: Default SYCL queue cannot be initialized." << std::endl;
-            return;
-        }
-        q = gpujpeg_sycl::default_queue;
+        q = gpujpeg_sycl::get_current_queue();
     }
 
     try {
