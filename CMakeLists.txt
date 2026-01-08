@@ -262,7 +262,11 @@ if(GPU_BACKEND STREQUAL "CUDA")
 elseif(GPU_BACKEND STREQUAL "HIP")
     target_compile_definitions(${PROJECT_NAME} PRIVATE GPUJPEG_USE_HIP)
 elseif(GPU_BACKEND STREQUAL "SYCL")
-    target_compile_definitions(${PROJECT_NAME} PRIVATE GPUJPEG_USE_SYCL)
+    if(WIN32)
+        target_compile_definitions(${PROJECT_NAME} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN GPUJPEG_USE_SYCL)
+    else()
+        target_compile_definitions(${PROJECT_NAME} PRIVATE GPUJPEG_USE_SYCL)
+    endif()
 endif()
 
 # Include directories based on backend
@@ -329,12 +333,12 @@ if(NOT IS_SUBMODULE)
         list(APPEND GPUJPEGTOOL_SOURCES src/utils/getopt.cpp)
     endif()
     add_executable(gpujpegtool ${GPUJPEGTOOL_SOURCES})
-    target_link_libraries(gpujpegtool gpujpeg)
 
     if(WIN32)
         target_compile_definitions(gpujpegtool PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
     endif()
 
+    target_link_libraries(gpujpegtool gpujpeg)
     install(TARGETS gpujpegtool DESTINATION bin)
     
     add_executable(create_rgb_gradient src/create_rgb_gradient.cpp)

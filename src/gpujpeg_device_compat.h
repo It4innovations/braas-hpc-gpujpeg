@@ -619,71 +619,30 @@ inline dim3 to_dim3(const dim3& d) { return d; }
 inline dim3 to_dim3(unsigned int v) { return dim3(v, 1, 1); }
 inline dim3 to_dim3(int v) { return dim3(v, 1, 1); }
 
-// Helper function for launching SYCL kernels
-template<typename KernelFunc>
-inline void sycl_launch_kernel(sycl::queue* q, dim3 grid, dim3 block, size_t smem, KernelFunc&& kernel) {
-#ifdef GPUJPEG_DEBUG_KERNEL_LAUNCH
-    std::cerr << "[SYCL KERNEL LAUNCH] Submitting kernel with:"
-              << "\n  Grid: (" << grid.x << ", " << grid.y << ", " << grid.z << ")"
-              << "\n  Block: (" << block.x << ", " << block.y << ", " << block.z << ")"
-              << "\n  Global range: (" << (grid.x * block.x) << ", " << (grid.y * block.y) << ", " << (grid.z * block.z) << ")"
-              << "\n  Shared memory: " << smem << " bytes"
-              << "\n  Queue: " << (void*)q
-              << std::endl;
-#endif
-
-    // Use current device queue if q is null
-    if (!q) {
-        q = gpujpeg_sycl::get_current_queue();
-    }
-
-    try {
-        // Submit kernel to SYCL queue
-        sycl::event e = q->submit([&](sycl::handler& cgh) {
-            sycl::range<3> global_range(grid.z * block.z, grid.y * block.y, grid.x * block.x);
-            sycl::range<3> local_range(block.z, block.y, block.x);
-            
-            // Allocate local memory if needed
-            if (smem > 0) {
-                sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(smem), cgh);
-                cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
-                                [=](sycl::nd_item<3> item) {
-                    kernel(item, local_mem);
-                });
-            } else {
-                cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
-                                [=](sycl::nd_item<3> item) {
-                    kernel(item, sycl::local_accessor<uint8_t, 1>{});
-                });
-            }
-        });
-
-        // Force synchronization AND error propagation
-        // e.wait_and_throw();
-
-#ifdef GPUJPEG_DEBUG_KERNEL_LAUNCH
-        std::cerr << "[SYCL KERNEL LAUNCH] Kernel has been successfully launched." << std::endl;
-#endif
-
-    } catch (const sycl::exception& e) {
-        std::cerr << "\n[SYCL KERNEL EXCEPTION]\n"
-                  << "  what(): " << e.what() << "\n"
-                  << "  code(): " << e.code().value() << "\n"
-                  << "  Grid: (" << grid.x << ", " << grid.y << ", " << grid.z << ")\n"
-                  << "  Block: (" << block.x << ", " << block.y << ", " << block.z << ")\n"
-                  << "  Shared mem: " << smem << " bytes"
-                  << std::endl;
-        throw; // Re-throw to propagate error
-    } catch (const std::exception& e) {
-        std::cerr << "\n[SYCL KERNEL STD EXCEPTION]\n"
-                  << "  what(): " << e.what() << "\n"
-                  << "  Grid: (" << grid.x << ", " << grid.y << ", " << grid.z << ")\n"
-                  << "  Block: (" << block.x << ", " << block.y << ", " << block.z << ")\n"
-                  << "  Shared mem: " << smem << " bytes"
-                  << std::endl;
-        throw; // Re-throw to propagate error
-    }
-}
+// Helper macro for launching SYCL kernels
+#define sycl_launch_kernel(q, grid, block, smem, kernel) \
+    do { \
+        sycl::queue* _sycl_q = (q); \
+        if (!_sycl_q) { \
+            _sycl_q = gpujpeg_sycl::get_current_queue(); \
+        } \
+        sycl::event _sycl_e = _sycl_q->submit([&](sycl::handler& cgh) { \
+            sycl::range<3> _global_range((grid).z * (block).z, (grid).y * (block).y, (grid).x * (block).x); \
+            sycl::range<3> _local_range((block).z, (block).y, (block).x); \
+            if ((smem) > 0) { \
+                sycl::local_accessor<uint8_t, 1> _local_mem(sycl::range<1>(smem), cgh); \
+                cgh.parallel_for(sycl::nd_range<3>(_global_range, _local_range), \
+                                [=](sycl::nd_item<3> item) { \
+                    kernel(item, _local_mem); \
+                }); \
+            } else { \
+                cgh.parallel_for(sycl::nd_range<3>(_global_range, _local_range), \
+                                [=](sycl::nd_item<3> item) { \
+                    kernel(item, sycl::local_accessor<uint8_t, 1>{}); \
+                }); \
+            } \
+        }); \
+    } while(0)
 
 // Macro for kernel launch - handle both cases with and without additional args
 #define GPU_KERNEL_LAUNCH(kernel, grid, block, smem, stream, ...) \
