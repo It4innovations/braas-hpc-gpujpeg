@@ -154,18 +154,18 @@ set(H_FILES
 
 # Common source files (.cpp files)
 set(GPUJPEG_COMMON_SOURCES
-    src/gpujpeg_common.cpp
-    src/gpujpeg_dct_cpu.cpp
-    src/gpujpeg_decoder.cpp
-    src/gpujpeg_encoder.cpp
-    src/gpujpeg_exif.cpp
-    src/gpujpeg_huffman_cpu_decoder.cpp
-    src/gpujpeg_huffman_cpu_encoder.cpp
-    src/gpujpeg_postprocessor.cpp
-    src/gpujpeg_preprocessor.cpp
-    src/gpujpeg_reader.cpp
-    src/gpujpeg_table.cpp
-    src/gpujpeg_writer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_common.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_dct_cpu.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_decoder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_encoder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_exif.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_huffman_cpu_decoder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_huffman_cpu_encoder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_postprocessor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_preprocessor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_reader.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_table.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_writer.cpp
 )
 list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
 list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/getopt.cpp")
@@ -191,9 +191,9 @@ endif()
 
 # Add utility source files
 list(APPEND GPUJPEG_COMMON_SOURCES
-    src/utils/image_delegate.cpp
-    src/utils/pam.cpp
-    src/utils/y4m.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/image_delegate.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/pam.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/y4m.cpp
 )
 
 # GPU kernel sources - different per backend
@@ -330,6 +330,11 @@ if(NOT IS_SUBMODULE)
     endif()
     add_executable(gpujpegtool ${GPUJPEGTOOL_SOURCES})
     target_link_libraries(gpujpegtool gpujpeg)
+
+    if(WIN32)
+        target_compile_definitions(gpujpegtool PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    endif()
+
     install(TARGETS gpujpegtool DESTINATION bin)
     
     add_executable(create_rgb_gradient src/create_rgb_gradient.cpp)
