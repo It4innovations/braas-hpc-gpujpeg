@@ -494,7 +494,7 @@ gpuError_t gpuGetDeviceProperties(gpuDeviceProp* prop, int device) {
         
         // Detect device type for appropriate defaults
         bool is_cpu = dev.is_cpu();
-        bool is_gpu = dev.is_gpu();
+        // bool is_gpu = dev.is_gpu();
         
         // Set defaults for properties not directly available in SYCL
         // IMPORTANT: Set major/minor early so they're visible in initialization messages

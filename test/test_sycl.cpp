@@ -66,15 +66,15 @@ struct gpujpeg_preprocessor_raw_to_comp_store {
 
 // SYCL Kernel implementation
 template<
-    enum gpujpeg_pixel_format pixel_format,
-    enum gpujpeg_color_space color_space,
     enum gpujpeg_color_space color_space_internal,
+    enum gpujpeg_color_space color_space,
+    enum gpujpeg_pixel_format pixel_format,
     uint8_t s_comp1_samp_factor_h, uint8_t s_comp1_samp_factor_v,
     uint8_t s_comp2_samp_factor_h, uint8_t s_comp2_samp_factor_v,
     uint8_t s_comp3_samp_factor_h, uint8_t s_comp3_samp_factor_v,
     uint8_t s_comp4_samp_factor_h, uint8_t s_comp4_samp_factor_v
 >
-void gpujpeg_preprocessor_raw_to_comp_kernel(sycl::nd_item<3> item, 
+void gpujpeg_preprocessor_raw_to_comp_kernel2(sycl::nd_item<3> item, 
                                              sycl::local_accessor<uint8_t, 1> shared_mem_accessor,
                                              struct gpujpeg_preprocessor_data data, 
                                              const uint8_t* d_data_raw, int image_width_padding, 
@@ -111,15 +111,22 @@ void gpujpeg_preprocessor_raw_to_comp_kernel(sycl::nd_item<3> item,
                                                                                                   data);
 }
 
-int main(int argc, char** argv) {
+
+#ifdef TEST_MAIN
+int main(int argc, char** argv) 
+#else
+int 
+test_sycl_kernel() 
+#endif
+{
     std::cout << "SYCL Preprocessor Kernel Test\n";
     std::cout << "==============================\n\n";
 
     try {
         // Get SYCL queue
-        sycl::queue q(sycl::default_selector_v);
-        std::cout << "Running on device: " 
-                  << q.get_device().get_info<sycl::info::device::name>() << "\n\n";
+        // sycl::queue q(sycl::default_selector_v);
+        // std::cout << "Running on device: " 
+        //           << q.get_device().get_info<sycl::info::device::name>() << "\n\n";
 
         // Test parameters
         const int image_width = 1920;
@@ -133,7 +140,7 @@ int main(int argc, char** argv) {
 
         // Allocate and initialize host data
         std::vector<uint8_t> h_data_raw(image_size);
-        std::vector<uint8_t> h_output(image_width * image_height);
+        std::vector<uint8_t> h_output(image_size / 3);
         
         // Fill input with test pattern
         for (int i = 0; i < image_size; ++i) {
@@ -144,24 +151,40 @@ int main(int argc, char** argv) {
         std::cout << "Input size: " << image_size << " bytes\n";
 
         // Allocate device memory
-        uint8_t* d_data_raw = sycl::malloc_device<uint8_t>(image_size, q);
-        uint8_t* d_output = sycl::malloc_device<uint8_t>(image_width * image_height, q);
+        uint8_t* d_data_raw;
+        gpuMalloc((void**)&d_data_raw, image_size);        
+        uint8_t* d_output_r;
+        uint8_t* d_output_g;
+        uint8_t* d_output_b;
+        gpuMalloc((void**)&d_output_r, image_size / 3);
+        gpuMalloc((void**)&d_output_g, image_size / 3);
+        gpuMalloc((void**)&d_output_b, image_size / 3);
 
-        if (!d_data_raw || !d_output) {
+        if (!d_data_raw || !d_output_r || !d_output_g || !d_output_b) {
             std::cerr << "Failed to allocate device memory\n";
             return 1;
         }
 
         // Copy data to device
-        q.memcpy(d_data_raw, h_data_raw.data(), image_size).wait();
-        q.memset(d_output, 0, image_width * image_height).wait();
+        gpuMemcpy(d_data_raw, h_data_raw.data(), image_size, gpuMemcpyHostToDevice);
+        gpuMemset(d_output_r, 0, image_size / 3);
+        gpuMemset(d_output_g, 0, image_size / 3);
+        gpuMemset(d_output_b, 0, image_size / 3);
 
         // Setup preprocessor data structure
         gpujpeg_preprocessor_data data;
-        data.comp[0].d_data = d_output;
+        data.comp[0].d_data = d_output_r;
         data.comp[0].data_width = image_width;
         data.comp[0].sampling_factor.horizontal = 1;
         data.comp[0].sampling_factor.vertical = 1;
+        data.comp[1].d_data = d_output_g;
+        data.comp[1].data_width = image_width;
+        data.comp[1].sampling_factor.horizontal = 1;
+        data.comp[1].sampling_factor.vertical = 1;
+        data.comp[2].d_data = d_output_b;
+        data.comp[2].data_width = image_width;
+        data.comp[2].sampling_factor.horizontal = 1;
+        data.comp[2].sampling_factor.vertical = 1;
 
         // Launch kernel
         const int block_size = 256;
@@ -173,48 +196,31 @@ int main(int argc, char** argv) {
         std::cout << "Launching kernel with " << num_blocks << " blocks, " 
                   << block_size << " threads per block\n";
 
-#if 0
-        q.submit([&](sycl::handler& h) {
-            h.parallel_for(sycl::nd_range<3>(global_size, local_size), 
-                          [=](sycl::nd_item<3> item) {
-                gpujpeg_preprocessor_raw_to_comp_kernel<
-                    GPUJPEG_444_U8_P012,
-                    GPUJPEG_RGB,
-                    GPUJPEG_YCBCR_BT601,
-                    1, 1,  // comp1 sampling
-                    1, 1,  // comp2 sampling
-                    1, 1,  // comp3 sampling
-                    0, 0   // comp4 sampling (disabled)
-                >(item, data, d_data_raw, image_width_padding, 
-                  image_width, image_height, width_div_mul, width_div_shift);
-            });
-        }).wait();
-#else
         // Use GPU_KERNEL_LAUNCH macro
         dim3 grid(num_blocks, 1, 1);
         dim3 block(block_size, 1, 1);
         
         GPU_KERNEL_LAUNCH(
-            (gpujpeg_preprocessor_raw_to_comp_kernel<
-                GPUJPEG_444_U8_P012,
-                GPUJPEG_RGB,
+            (gpujpeg_preprocessor_raw_to_comp_kernel2<
                 GPUJPEG_YCBCR_BT601,
+                GPUJPEG_RGB,
+                GPUJPEG_444_U8_P012,
                 1, 1,  // comp1 sampling
                 1, 1,  // comp2 sampling
                 1, 1,  // comp3 sampling
                 0, 0   // comp4 sampling (disabled)
             >),
-            grid, block, 0, &q,
+            grid, block, 0, nullptr,
             data, d_data_raw, image_width_padding, 
             image_width, image_height, width_div_mul, width_div_shift
         );
-        q.wait();
-#endif
+        
+        gpuStreamSynchronize(nullptr);
 
         std::cout << "Kernel execution completed\n";
 
-        // Copy result back to host
-        q.memcpy(h_output.data(), d_output, image_width * image_height).wait();
+        // Copy result back to host (R component)
+        gpuMemcpy(h_output.data(), d_output_r, image_size / 3, gpuMemcpyDeviceToHost);
 
         // Verify results (simple check)
         int non_zero_count = 0;
@@ -233,8 +239,10 @@ int main(int argc, char** argv) {
         std::cout << "\n";
 
         // Cleanup
-        sycl::free(d_data_raw, q);
-        sycl::free(d_output, q);
+        gpuFree(d_data_raw);
+        gpuFree(d_output_r);
+        gpuFree(d_output_g);
+        gpuFree(d_output_b);
 
         std::cout << "\nTest completed successfully!\n";
         return 0;

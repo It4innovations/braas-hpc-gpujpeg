@@ -12,6 +12,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Source and output paths
 SOURCE_FILE="$SCRIPT_DIR/test_sycl.cpp"
+COMPAT_SOURCE="$PROJECT_ROOT/src/gpujpeg_device_compat_sycl.cpp"
 OUTPUT_BINARY="$SCRIPT_DIR/test_sycl"
 
 # Include directories
@@ -20,16 +21,18 @@ INCLUDE_DIRS="-I$PROJECT_ROOT -I$PROJECT_ROOT/libgpujpeg -I$PROJECT_ROOT/src"
 # Compiler flags
 SYCL_FLAGS="-fsycl"
 CXX_FLAGS="-std=c++17 -O2 -Wall"
-DEFINES="-DGPUJPEG_USE_SYCL -DGPUJPEG_INTERNAL_BUILD"
+DEFINES="-DGPUJPEG_USE_SYCL -DGPUJPEG_INTERNAL_BUILD -DTEST_MAIN"
 
 # Build with icpx (Intel oneAPI DPC++/SYCL compiler)
 echo "Compiler: icpx"
 echo "Source: $SOURCE_FILE"
+echo "SYCL Compat: $COMPAT_SOURCE"
 echo "Output: $OUTPUT_BINARY"
 echo ""
 
 icpx $SYCL_FLAGS $CXX_FLAGS $DEFINES $INCLUDE_DIRS \
     "$SOURCE_FILE" \
+    "$COMPAT_SOURCE" \
     -o "$OUTPUT_BINARY"
 
 if [ $? -eq 0 ]; then

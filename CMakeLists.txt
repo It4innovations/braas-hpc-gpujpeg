@@ -50,13 +50,8 @@ elseif(GPUJPEG_USE_SYCL)
                         "Please set CMAKE_CXX_COMPILER to icpx or dpcpp.")
     endif()
     
-    # Add SYCL flags to C++ compiler only (C files will use forward declarations)
-    # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl")
-
     if(CMAKE_BUILD_TYPE MATCHES "Debug")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -fno-omit-frame-pointer")
-    elseif(CMAKE_BUILD_TYPE MATCHES "Release")
-        # set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG")
     endif()
     
 else()
@@ -116,21 +111,8 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 # Common settings
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 
-if(NOT MSVC OR MSVC_TOOLSET_VERSION GREATER 140)
-    set(NEEDED_COMPILER_FEATURES c_std_11)
-endif()
-
 set(COMPILED_OPTIONS)
 
-# allow passing <PackageName>_ROOT to find_package()
-if(POLICY CMP0074)
-    cmake_policy(SET CMP0074 NEW)
-endif()
-
-# add warnings
-if(POLICY CMP0092)
-    cmake_policy(SET CMP0092 NEW)
-endif()
 if (MSVC)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4")
     set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler /W4")
@@ -161,10 +143,30 @@ endif()
 message(STATUS "Configured options: ${COMPILED_OPTIONS}")
 
 # GPUJPEG library
-file(GLOB H_FILES libgpujpeg/*.h ${CMAKE_CURRENT_BINARY_DIR}/libgpujpeg/gpujpeg_version.h)
+set(H_FILES
+    libgpujpeg/gpujpeg_common.h
+    libgpujpeg/gpujpeg_decoder.h
+    libgpujpeg/gpujpeg_encoder.h
+    libgpujpeg/gpujpeg_type.h
+    libgpujpeg/gpujpeg.h
+    ${CMAKE_CURRENT_BINARY_DIR}/libgpujpeg/gpujpeg_version.h
+)
 
 # Common source files (.cpp files)
-file(GLOB GPUJPEG_COMMON_SOURCES src/*.cpp)
+set(GPUJPEG_COMMON_SOURCES
+    src/gpujpeg_common.cpp
+    src/gpujpeg_dct_cpu.cpp
+    src/gpujpeg_decoder.cpp
+    src/gpujpeg_encoder.cpp
+    src/gpujpeg_exif.cpp
+    src/gpujpeg_huffman_cpu_decoder.cpp
+    src/gpujpeg_huffman_cpu_encoder.cpp
+    src/gpujpeg_postprocessor.cpp
+    src/gpujpeg_preprocessor.cpp
+    src/gpujpeg_reader.cpp
+    src/gpujpeg_table.cpp
+    src/gpujpeg_writer.cpp
+)
 list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
 list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/getopt.cpp")
 
@@ -196,8 +198,7 @@ list(APPEND GPUJPEG_COMMON_SOURCES
 
 # GPU kernel sources - different per backend
 if(GPU_BACKEND STREQUAL "CUDA")
-    # Use .cu files directly for CUDA
-    file(GLOB GPUJPEG_GPU_SOURCES 
+    set(GPUJPEG_GPU_SOURCES
         src/gpujpeg_dct_gpu.cu
         src/gpujpeg_huffman_gpu_decoder.cu
         src/gpujpeg_huffman_gpu_encoder.cu
@@ -217,8 +218,7 @@ if(GPU_BACKEND STREQUAL "CUDA")
     endif()
     
 elseif(GPU_BACKEND STREQUAL "HIP")
-    # Use .cpp wrappers that include .cu files for HIP
-    file(GLOB GPUJPEG_GPU_SOURCES 
+    set(GPUJPEG_GPU_SOURCES
         src/gpujpeg_dct_gpu.cpp
         src/gpujpeg_huffman_gpu_decoder.cpp
         src/gpujpeg_huffman_gpu_encoder.cpp
@@ -231,12 +231,8 @@ elseif(GPU_BACKEND STREQUAL "HIP")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
     endif()
     
-    # Optionally specify GPU architecture for HIP
-    # set(CMAKE_HIP_ARCHITECTURES gfx906 gfx908 gfx90a gfx1030)
-    
 elseif(GPU_BACKEND STREQUAL "SYCL")
-    # SYCL compatibility layer implementation
-    file(GLOB GPUJPEG_GPU_SOURCES 
+    set(GPUJPEG_GPU_SOURCES
         src/gpujpeg_device_compat_sycl.cpp
         src/gpujpeg_dct_gpu.cpp
         src/gpujpeg_huffman_gpu_decoder.cpp
@@ -244,8 +240,6 @@ elseif(GPU_BACKEND STREQUAL "SYCL")
         src/gpujpeg_postprocessor.cpp
         src/gpujpeg_preprocessor.cpp
     )
-    # Note: SYCL requires kernel rewrites, .cu files won't work directly
-    # You would need to add SYCL kernel implementations here
     
     # SYCL-specific compiler flags
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsycl")
@@ -270,15 +264,6 @@ elseif(GPU_BACKEND STREQUAL "HIP")
 elseif(GPU_BACKEND STREQUAL "SYCL")
     target_compile_definitions(${PROJECT_NAME} PRIVATE GPUJPEG_USE_SYCL)
 endif()
-
-# Set C++11 minimum for compatibility layer
-target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_11)
-if(NEEDED_COMPILER_FEATURES)
-    target_compile_features(${PROJECT_NAME} PRIVATE ${NEEDED_COMPILER_FEATURES})
-endif()
-set_property(TARGET ${PROJECT_NAME} PROPERTY C_STANDARD 99)
-set_target_properties(${PROJECT_NAME} PROPERTIES SOVERSION 0)
-set_target_properties(${PROJECT_NAME} PROPERTIES PUBLIC_HEADER "${H_FILES}")
 
 # Include directories based on backend
 if(GPU_BACKEND STREQUAL "CUDA")
@@ -339,26 +324,19 @@ endif()
 
 # GPUJPEG command-line application
 if(NOT IS_SUBMODULE)
-    # GPUJPEG commmand-line application
     set(GPUJPEGTOOL_SOURCES src/main.cpp)
     if(WIN32)
         list(APPEND GPUJPEGTOOL_SOURCES src/utils/getopt.cpp)
     endif()
     add_executable(gpujpegtool ${GPUJPEGTOOL_SOURCES})
-    # set_target_properties(gpujpegtool PROPERTIES LINKER_LANGUAGE CXX)
-    #target_compile_features(gpujpeg-bin PRIVATE ${NEEDED_COMPILER_FEATURES})
-    #set_property(TARGET gpujpeg-bin PROPERTY C_STANDARD 99)
     target_link_libraries(gpujpegtool gpujpeg)
-    # set_target_properties(gpujpeg-bin PROPERTIES OUTPUT_NAME "gpujpeg")
     install(TARGETS gpujpegtool DESTINATION bin)
     
-    # Test program to generate gradient RGB image
     add_executable(create_rgb_gradient src/create_rgb_gradient.cpp)
-    # set_target_properties(create_rgb_gradient PROPERTIES LINKER_LANGUAGE CXX)
     install(TARGETS create_rgb_gradient DESTINATION bin)
 endif()
 
-install(TARGETS ${PROJECT_NAME} #gpujpeg-bin
+install(TARGETS ${PROJECT_NAME}
         EXPORT GPUJPEGTargets
         ARCHIVE DESTINATION lib
         LIBRARY DESTINATION lib
@@ -384,18 +362,6 @@ install(EXPORT GPUJPEGTargets
     DESTINATION lib/cmake/GPUJPEG)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/GPUJPEGConfig.cmake ${CMAKE_CURRENT_BINARY_DIR}/GPUJPEGConfigVersion.cmake
     DESTINATION lib/cmake/GPUJPEG)
-
-file(GLOB_RECURSE ALL_SOURCES *.cpp *.cu *.cuh *.h *.hpp)
-add_custom_target(cscope cscope -bv ${ALL_SOURCES})
-add_custom_target(ctags ctags ${ALL_SOURCES})
-add_custom_target(universal-ctags ctags-universal ${ALL_SOURCES})
-
-add_test(NAME unittests COMMAND make -C test/unit BUILD_DIR=${CMAKE_BINARY_DIR}
-        LIBDIR=${CMAKE_BINARY_DIR} CPATH=${CMAKE_CUDA_COMPILER_TOOLKIT_ROOT}/include
-        LIBRARY_PATH=${CMAKE_CUDA_COMPILER_TOOLKIT_ROOT}/lib64
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-add_test(NAME test-colors COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/colors/run_tests.sh ${CMAKE_CURRENT_BINARY_DIR}/${GPUJPEG_BIN_OUTPUT_NAME})
-add_test(NAME regression COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test/regression/run_tests.sh ${CMAKE_CURRENT_BINARY_DIR}/${GPUJPEG_BIN_OUTPUT_NAME})
 
 # Print configuration summary
 message(STATUS "")
