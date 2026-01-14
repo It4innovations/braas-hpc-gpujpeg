@@ -607,12 +607,12 @@ tst_image_load_delegate(const char* filename, size_t* image_size, void** image_d
         }
         case TST_NOISE: {
             unsigned char* data = (unsigned char*)*image_data;
-#ifndef WIN32
+#ifndef _MSC_VERER
             srand(time(NULL));
 #endif
             for ( unsigned i = 0; i < *image_size; ++i ) {
                 unsigned val = 0;
-#ifdef WIN32
+#ifdef _MSC_VERER
                 rand_s(&val);
 #else
                 val = rand();

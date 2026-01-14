@@ -122,15 +122,9 @@ gpuError_t gpuMalloc(void** ptr, size_t size) {
         if (!q) {
             return -1;
         }
-        
-        // For CPU devices, use shared memory instead of device-only memory
-        // This avoids memcpy issues with OpenCL CPU backend
-        // auto dev = q->get_device();
-        // if (dev.is_cpu()) {
-        //     *ptr = sycl::malloc_shared(size, *q);
-        // } else {
+        // TODO        
+        //*ptr = sycl::malloc_shared(size, *q);
         *ptr = sycl::malloc_device(size, *q);
-        // }
         return *ptr ? gpuSuccess : -1;
     } catch (const std::exception& e) {
         std::cerr << "[SYCL ERROR in gpuMalloc] " << e.what() << std::endl;

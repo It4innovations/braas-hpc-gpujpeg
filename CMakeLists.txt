@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # options for GPU backend selection
 option(GPUJPEG_USE_HIP "Build with HIP backend for AMD GPUs" OFF)
 option(GPUJPEG_USE_SYCL "Build with SYCL backend for Intel/other GPUs" OFF)
+option(ENABLE_LANGUAGE_HIP "Enable HIP language support (ON) or use find_package (OFF)" ON)
 
 # Determine project languages based on GPU backend
 if(GPUJPEG_USE_HIP)
@@ -29,15 +30,12 @@ if(GPUJPEG_USE_HIP)
     
     # Enable HIP language - CMake will find the appropriate Clang compiler
     # Don't set CMAKE_HIP_COMPILER to hipcc wrapper, let CMake find Clang
-    if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.21)
+    if(ENABLE_LANGUAGE_HIP)
         enable_language(HIP)
+        message(STATUS "Using enable_language(HIP) for HIP support")
     else()
-        message(WARNING "CMake 3.21+ recommended for HIP support. Using CXX with HIP flags.")
-        # Fall back to C++ compilation with HIP flags for older CMake
-        find_program(HIPCC_EXECUTABLE NAMES hipcc REQUIRED)
-        if(NOT HIPCC_EXECUTABLE)
-            message(FATAL_ERROR "hipcc not found. Please install ROCm.")
-        endif()
+        message(STATUS "Using find_package(HIP) for HIP support")
+        find_package(HIP REQUIRED)
     endif()
     
 elseif(GPUJPEG_USE_SYCL)
@@ -161,33 +159,10 @@ set(GPUJPEG_COMMON_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_exif.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_huffman_cpu_decoder.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_huffman_cpu_encoder.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_postprocessor.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_preprocessor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_reader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_table.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_writer.cpp
 )
-list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
-list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/utils/getopt.cpp")
-
-# For CUDA backend, remove GPU-related .cpp files (these are wrappers for HIP/SYCL only)
-# For HIP/SYCL backends, keep these .cpp files as they are the actual implementation
-if(GPU_BACKEND STREQUAL "CUDA")
-    list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES 
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_dct_gpu.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_huffman_gpu_decoder.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_huffman_gpu_encoder.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_postprocessor.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_preprocessor.cpp"
-    )
-endif()
-
-# For non-SYCL backends, always remove SYCL-specific compatibility layer
-if(NOT GPU_BACKEND STREQUAL "SYCL")
-    list(REMOVE_ITEM GPUJPEG_COMMON_SOURCES 
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_device_compat_sycl.cpp"
-    )
-endif()
 
 # Add utility source files
 list(APPEND GPUJPEG_COMMON_SOURCES
@@ -251,7 +226,7 @@ endif()
 add_library(gpujpeg ${H_FILES} ${GPUJPEG_COMMON_SOURCES} ${GPUJPEG_GPU_SOURCES})
 
 # Set language for GPU source files
-if(GPU_BACKEND STREQUAL "HIP")
+if(GPU_BACKEND STREQUAL "HIP" AND ENABLE_LANGUAGE_HIP)
     # Mark GPU sources as HIP language so they're compiled with hipcc
     set_source_files_properties(${GPUJPEG_GPU_SOURCES} PROPERTIES LANGUAGE HIP)
 endif()
@@ -314,7 +289,10 @@ if(GPU_BACKEND STREQUAL "CUDA")
     
 elseif(GPU_BACKEND STREQUAL "HIP")
     # HIP libraries are automatically linked when using HIP language
-    # No need to explicitly find_package(hip) when using enable_language(HIP)
+    # If using find_package(HIP), link HIP runtime explicitly
+    if(NOT ENABLE_LANGUAGE_HIP AND HIP_FOUND)
+        target_link_libraries(${PROJECT_NAME} hip::amdhip64)
+    endif()
     if(UNIX)
         target_link_libraries(${PROJECT_NAME} m)
     endif()

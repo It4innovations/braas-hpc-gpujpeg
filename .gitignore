@@ -46,3 +46,4 @@ test/test_sycl
 Debug
 Release
 
+test/test_sycl.exe
