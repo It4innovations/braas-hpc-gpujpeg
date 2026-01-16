@@ -418,11 +418,7 @@ static inline unsigned int GPU_DIM_Z(unsigned int d) { return 1u; }
 #define GPU_GRID_DIM_Z                  (item.get_group_range(0))
 
 // Synchronization
-#define GPU_SYNCTHREADS() \
-    { \
-    auto sg = item.get_sub_group(); \
-    sycl::group_barrier(sg); \
-    }
+#define GPU_SYNCTHREADS() item.barrier(sycl::access::fence_space::local_space)
 
 //item.barrier(sycl::access::fence_space::local_space)
 

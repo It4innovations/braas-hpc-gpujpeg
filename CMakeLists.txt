@@ -49,7 +49,7 @@ elseif(GPUJPEG_USE_SYCL)
     endif()
     
     if(CMAKE_BUILD_TYPE MATCHES "Debug")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -fno-omit-frame-pointer")
+        #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -fno-omit-frame-pointer")
     endif()
     
 else()

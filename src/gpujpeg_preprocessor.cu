@@ -265,6 +265,34 @@ gpujpeg_preprocessor_launch_encode_kernel(struct gpujpeg_coder* coder, dim3 grid
         coder->component[2].sampling_factor.horizontal, coder->component[2].sampling_factor.vertical,
         coder->component[3].sampling_factor.horizontal, coder->component[3].sampling_factor.vertical);
 
+#ifdef GPUJPEG_USE_SYCL
+#define LAUNCH_KERNEL(PIXEL_FORMAT, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
+        { \
+            GPUJPEG_KERNEL_LAUNCH_LOG(gpujpeg_preprocessor_raw_to_comp_kernel<color_space_internal COMMA COLOR COMMA PIXEL_FORMAT COMMA P1 COMMA P2 COMMA P3 COMMA P4 COMMA P5 COMMA P6 COMMA P7 COMMA P8>, grid, threads, 0, coder->stream); \
+            sycl::queue* sycl_q = coder->stream; \
+            if (!sycl_q) { \
+                sycl_q = gpujpeg_sycl::get_current_queue(); \
+            } \
+            sycl::range<3> global_range(grid.z * threads.z, grid.y * threads.y, grid.x * threads.x); \
+            sycl::range<3> local_range(threads.z, threads.y, threads.x); \
+            sycl_q->submit([&](sycl::handler& cgh) { \
+                sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh); \
+                cgh.parallel_for(sycl::nd_range<3>(global_range, local_range), \
+                                [local_mem, \
+                                 preprocessor_data = coder->preprocessor.data, \
+                                 d_data_raw = coder->d_data_raw, \
+                                 width_padding = coder->param_image.width_padding, \
+                                 image_width, image_height, width_div_mul, width_div_shift](sycl::nd_item<3> item) { \
+                    gpujpeg_preprocessor_raw_to_comp_kernel<color_space_internal, COLOR, PIXEL_FORMAT, P1, P2, P3, P4, P5, P6, P7, P8>( \
+                        item, local_mem, preprocessor_data, d_data_raw, width_padding, \
+                        image_width, image_height, width_div_mul, width_div_shift); \
+                }); \
+            }); \
+        } \
+        gpujpeg_cuda_check_error("Preprocessor encoding failed", return -1); \
+        return 0;
+
+#else
 #define LAUNCH_KERNEL(PIXEL_FORMAT, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
         GPU_KERNEL_LAUNCH((gpujpeg_preprocessor_raw_to_comp_kernel<color_space_internal, COLOR, PIXEL_FORMAT, P1, P2, P3, P4, P5, P6, P7, P8>), \
             grid, threads, 0, coder->stream, \
@@ -278,6 +306,7 @@ gpujpeg_preprocessor_launch_encode_kernel(struct gpujpeg_coder* coder, dim3 grid
         ); \
         gpujpeg_cuda_check_error("Preprocessor encoding failed", return -1); \
         return 0;
+#endif
 
 #define LAUNCH_KERNEL_SWITCH(PIXEL_FORMAT, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
         switch ( PIXEL_FORMAT ) { \
@@ -556,7 +585,26 @@ gpujpeg_preprocessor_flip_lines(struct gpujpeg_coder* coder)
         int width = coder->component[i].data_width / 4;
         int height = coder->component[i].data_height;
         dim3 grid((width + block.x - 1) / block.x, height / 2); // only half of height
+#ifdef GPUJPEG_USE_SYCL
+        GPUJPEG_KERNEL_LAUNCH_LOG(vertical_flip_kernel, grid, block, 0, coder->stream);
+        sycl::queue* sycl_q = coder->stream;
+        if (!sycl_q) {
+            sycl_q = gpujpeg_sycl::get_current_queue();
+        }
+        sycl::range<3> global_range(grid.z * block.z, grid.y * block.y, grid.x * block.x);
+        sycl::range<3> local_range(block.z, block.y, block.x);
+        sycl_q->submit([&](sycl::handler& cgh) {
+            sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh);
+            cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                            [local_mem,
+                             d_data = (uint32_t*)coder->component[i].d_data,
+                             width, height](sycl::nd_item<3> item) {
+                vertical_flip_kernel(item, local_mem, d_data, width, height);
+            });
+        });
+#else
         GPU_KERNEL_LAUNCH(vertical_flip_kernel, grid, block, 0, coder->stream, (uint32_t*)coder->component[i].d_data, width, height);
+#endif
     }
     gpujpeg_cuda_check_error("Preprocessor flip failed", return -1);
     return 0;
@@ -615,33 +663,103 @@ gpujpeg_preprocessor_channel_remap(struct gpujpeg_coder* coder)
 
 #ifdef GPUJPEG_USE_SYCL
     // SYCL cannot use function pointers for kernel launch, need direct switch
+    sycl::queue* sycl_q = coder->stream;
+    if (!sycl_q) {
+        sycl_q = gpujpeg_sycl::get_current_queue();
+    }
+    sycl::range<3> global_range(grid.z * block.z, grid.y * block.y, grid.x * block.x);
+    sycl::range<3> local_range(block.z, block.y, block.x);
+    
     switch ( coder->param_image.pixel_format ) {
         case GPUJPEG_444_U8_P012:
-            GPU_KERNEL_LAUNCH((channel_remap_kernel<GPUJPEG_444_U8_P012>), grid, block, 0, coder->stream, coder->d_data_raw, width, pitch, height, mapping);
+            GPUJPEG_KERNEL_LAUNCH_LOG(channel_remap_kernel<GPUJPEG_444_U8_P012>, grid, block, 0, coder->stream);
+            sycl_q->submit([&](sycl::handler& cgh) {
+                sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh);
+                cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                                [local_mem, d_data_raw = coder->d_data_raw, width, pitch, height, mapping](sycl::nd_item<3> item) {
+                    channel_remap_kernel<GPUJPEG_444_U8_P012>(item, local_mem, d_data_raw, width, pitch, height, mapping);
+                });
+            });
             break;
         case GPUJPEG_4444_U8_P0123:
-            GPU_KERNEL_LAUNCH((channel_remap_kernel<GPUJPEG_4444_U8_P0123>), grid, block, 0, coder->stream, coder->d_data_raw, width, pitch, height, mapping);
+            GPUJPEG_KERNEL_LAUNCH_LOG(channel_remap_kernel<GPUJPEG_4444_U8_P0123>, grid, block, 0, coder->stream);
+            sycl_q->submit([&](sycl::handler& cgh) {
+                sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh);
+                cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                                [local_mem, d_data_raw = coder->d_data_raw, width, pitch, height, mapping](sycl::nd_item<3> item) {
+                    channel_remap_kernel<GPUJPEG_4444_U8_P0123>(item, local_mem, d_data_raw, width, pitch, height, mapping);
+                });
+            });
             break;
         case GPUJPEG_4444_U16_P0123:
-            GPU_KERNEL_LAUNCH((channel_remap_kernel<GPUJPEG_4444_U16_P0123>), grid, block, 0, coder->stream, coder->d_data_raw, width, pitch, height, mapping);
+            GPUJPEG_KERNEL_LAUNCH_LOG(channel_remap_kernel<GPUJPEG_4444_U16_P0123>, grid, block, 0, coder->stream);
+            sycl_q->submit([&](sycl::handler& cgh) {
+                sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh);
+                cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                                [local_mem, d_data_raw = coder->d_data_raw, width, pitch, height, mapping](sycl::nd_item<3> item) {
+                    channel_remap_kernel<GPUJPEG_4444_U16_P0123>(item, local_mem, d_data_raw, width, pitch, height, mapping);
+                });
+            });
             break;
         case GPUJPEG_4444_F32_P0123:
-            GPU_KERNEL_LAUNCH((channel_remap_kernel<GPUJPEG_4444_F32_P0123>), grid, block, 0, coder->stream, coder->d_data_raw, width, pitch, height, mapping);
+            GPUJPEG_KERNEL_LAUNCH_LOG(channel_remap_kernel<GPUJPEG_4444_F32_P0123>, grid, block, 0, coder->stream);
+            sycl_q->submit([&](sycl::handler& cgh) {
+                sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh);
+                cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                                [local_mem, d_data_raw = coder->d_data_raw, width, pitch, height, mapping](sycl::nd_item<3> item) {
+                    channel_remap_kernel<GPUJPEG_4444_F32_P0123>(item, local_mem, d_data_raw, width, pitch, height, mapping);
+                });
+            });
             break;
         case GPUJPEG_422_U8_P1020:
-            GPU_KERNEL_LAUNCH((channel_remap_kernel<GPUJPEG_422_U8_P1020>), grid, block, 0, coder->stream, coder->d_data_raw, width, pitch, height, mapping);
+            GPUJPEG_KERNEL_LAUNCH_LOG(channel_remap_kernel<GPUJPEG_422_U8_P1020>, grid, block, 0, coder->stream);
+            sycl_q->submit([&](sycl::handler& cgh) {
+                sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh);
+                cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                                [local_mem, d_data_raw = coder->d_data_raw, width, pitch, height, mapping](sycl::nd_item<3> item) {
+                    channel_remap_kernel<GPUJPEG_422_U8_P1020>(item, local_mem, d_data_raw, width, pitch, height, mapping);
+                });
+            });
             break;
         case GPUJPEG_444_U8_P0P1P2:
-            GPU_KERNEL_LAUNCH((channel_remap_kernel<GPUJPEG_444_U8_P0P1P2>), grid, block, 0, coder->stream, coder->d_data_raw, width, pitch, height, mapping);
+            GPUJPEG_KERNEL_LAUNCH_LOG(channel_remap_kernel<GPUJPEG_444_U8_P0P1P2>, grid, block, 0, coder->stream);
+            sycl_q->submit([&](sycl::handler& cgh) {
+                sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh);
+                cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                                [local_mem, d_data_raw = coder->d_data_raw, width, pitch, height, mapping](sycl::nd_item<3> item) {
+                    channel_remap_kernel<GPUJPEG_444_U8_P0P1P2>(item, local_mem, d_data_raw, width, pitch, height, mapping);
+                });
+            });
             break;
         case GPUJPEG_422_U8_P0P1P2:
-            GPU_KERNEL_LAUNCH((channel_remap_kernel<GPUJPEG_422_U8_P0P1P2>), grid, block, 0, coder->stream, coder->d_data_raw, width, pitch, height, mapping);
+            GPUJPEG_KERNEL_LAUNCH_LOG(channel_remap_kernel<GPUJPEG_422_U8_P0P1P2>, grid, block, 0, coder->stream);
+            sycl_q->submit([&](sycl::handler& cgh) {
+                sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh);
+                cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                                [local_mem, d_data_raw = coder->d_data_raw, width, pitch, height, mapping](sycl::nd_item<3> item) {
+                    channel_remap_kernel<GPUJPEG_422_U8_P0P1P2>(item, local_mem, d_data_raw, width, pitch, height, mapping);
+                });
+            });
             break;
         case GPUJPEG_420_U8_P0P1P2:
-            GPU_KERNEL_LAUNCH((channel_remap_kernel<GPUJPEG_420_U8_P0P1P2>), grid, block, 0, coder->stream, coder->d_data_raw, width, pitch, height, mapping);
+            GPUJPEG_KERNEL_LAUNCH_LOG(channel_remap_kernel<GPUJPEG_420_U8_P0P1P2>, grid, block, 0, coder->stream);
+            sycl_q->submit([&](sycl::handler& cgh) {
+                sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh);
+                cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                                [local_mem, d_data_raw = coder->d_data_raw, width, pitch, height, mapping](sycl::nd_item<3> item) {
+                    channel_remap_kernel<GPUJPEG_420_U8_P0P1P2>(item, local_mem, d_data_raw, width, pitch, height, mapping);
+                });
+            });
             break;
         case GPUJPEG_U8:
-            GPU_KERNEL_LAUNCH((channel_remap_kernel<GPUJPEG_U8>), grid, block, 0, coder->stream, coder->d_data_raw, width, pitch, height, mapping);
+            GPUJPEG_KERNEL_LAUNCH_LOG(channel_remap_kernel<GPUJPEG_U8>, grid, block, 0, coder->stream);
+            sycl_q->submit([&](sycl::handler& cgh) {
+                sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh);
+                cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                                [local_mem, d_data_raw = coder->d_data_raw, width, pitch, height, mapping](sycl::nd_item<3> item) {
+                    channel_remap_kernel<GPUJPEG_U8>(item, local_mem, d_data_raw, width, pitch, height, mapping);
+                });
+            });
             break;
         case GPUJPEG_PIXFMT_NONE:
             GPUJPEG_ASSERT(0 && "Preprocess from GPUJPEG_PIXFMT_NONE not allowed");
