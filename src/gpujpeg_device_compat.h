@@ -418,7 +418,13 @@ static inline unsigned int GPU_DIM_Z(unsigned int d) { return 1u; }
 #define GPU_GRID_DIM_Z                  (item.get_group_range(0))
 
 // Synchronization
-#define GPU_SYNCTHREADS()               item.barrier(sycl::access::fence_space::local_space)
+#define GPU_SYNCTHREADS() \
+    { \
+    auto sg = item.get_sub_group(); \
+    sycl::group_barrier(sg); \
+    }
+
+//item.barrier(sycl::access::fence_space::local_space)
 
 // Sub-group (warp) operations for SYCL
 #define GPU_WARP_SIZE                       32  // Assume 32 for compatibility, may vary by device
@@ -619,41 +625,37 @@ inline dim3 to_dim3(const dim3& d) { return d; }
 inline dim3 to_dim3(unsigned int v) { return dim3(v, 1, 1); }
 inline dim3 to_dim3(int v) { return dim3(v, 1, 1); }
 
-// Helper macro for launching SYCL kernels
-#define sycl_launch_kernel(q, grid, block, smem, kernel) \
-    do { \
-        sycl::queue* _sycl_q = (q); \
-        if (!_sycl_q) { \
-            _sycl_q = gpujpeg_sycl::get_current_queue(); \
-        } \
-        sycl::event _sycl_e = _sycl_q->submit([&](sycl::handler& cgh) { \
-            sycl::range<3> _global_range((grid).z * (block).z, (grid).y * (block).y, (grid).x * (block).x); \
-            sycl::range<3> _local_range((block).z, (block).y, (block).x); \
-            if ((smem) > 0) { \
-                sycl::local_accessor<uint8_t, 1> _local_mem(sycl::range<1>(smem), cgh); \
-                cgh.parallel_for(sycl::nd_range<3>(_global_range, _local_range), \
-                                [=](sycl::nd_item<3> item) { \
-                    kernel(item, _local_mem); \
-                }); \
-            } else { \
-                cgh.parallel_for(sycl::nd_range<3>(_global_range, _local_range), \
-                                [=](sycl::nd_item<3> item) { \
-                    kernel(item, sycl::local_accessor<uint8_t, 1>{}); \
-                }); \
-            } \
-        }); \
-    } while(0)
-
 // Macro for kernel launch - handle both cases with and without additional args
 #define GPU_KERNEL_LAUNCH(kernel, grid, block, smem, stream, ...) \
     do { \
         dim3 _grid = to_dim3(grid); \
         dim3 _block = to_dim3(block); \
         GPUJPEG_KERNEL_LAUNCH_LOG(kernel, _grid, _block, smem, stream); \
-        sycl_launch_kernel(stream, _grid, _block, smem, \
-            [=](sycl::nd_item<3> item, sycl::local_accessor<uint8_t, 1> shared_mem_accessor) { \
-                kernel(item, shared_mem_accessor __VA_OPT__(,) __VA_ARGS__); \
-            }); \
+        sycl::queue* _sycl_q = (stream); \
+        if (!_sycl_q) { \
+            _sycl_q = gpujpeg_sycl::get_current_queue(); \
+        } \
+        auto _kernel_args = std::make_tuple(__VA_ARGS__); \
+        sycl::event _sycl_e = _sycl_q->submit([&](sycl::handler& cgh) { \
+            sycl::range<3> _global_range(_grid.z * _block.z, _grid.y * _block.y, _grid.x * _block.x); \
+            sycl::range<3> _local_range(_block.z, _block.y, _block.x); \
+            if ((smem) > 0) { \
+                sycl::local_accessor<uint8_t, 1> _local_mem(sycl::range<1>(smem), cgh); \
+                cgh.parallel_for(sycl::nd_range<3>(_global_range, _local_range), \
+                                [_local_mem, _kernel_args](sycl::nd_item<3> item) { \
+                    std::apply([&](auto&&... args) { \
+                        kernel(item, _local_mem, args...); \
+                    }, _kernel_args); \
+                }); \
+            } else { \
+                cgh.parallel_for(sycl::nd_range<3>(_global_range, _local_range), \
+                                [_kernel_args](sycl::nd_item<3> item) { \
+                    std::apply([&](auto&&... args) { \
+                        kernel(item, sycl::local_accessor<uint8_t, 1>{}, args...); \
+                    }, _kernel_args); \
+                }); \
+            } \
+        }); \
     } while(0)
 
 // Macro to declare shared memory parameter for SYCL kernels
