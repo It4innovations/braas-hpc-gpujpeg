@@ -398,7 +398,7 @@ gpujpeg_huffman_encoder_encode_kernel_warp(
             // Get coder parameters
             const int last_dc_idx = 256 + (packed_block_info & 0x7f);
 
-            // Get offset to right part of huffman table
+            // Get offset to right part of the huffman table
             const int huffman_table_offset = packed_block_info & 0x80 ? (256 + 1) * 2 : 0; // possibly skips luminance tables
 
             // Source data pointer
@@ -616,16 +616,17 @@ gpujpeg_huffman_encoder_compaction_kernel (
     const int block_idx = item.get_group(2) + item.get_group(1) * item.get_group_range(2);
     const int segment_idx = local_y + block_idx * item.get_local_range(1);
 
-    if(segment_idx >= segment_count) {
-        return;
-    }
+    // Check if this segment is valid
+    const bool is_valid_segment = (segment_idx < segment_count);
 
-    // Get info about the segment
-    const unsigned int segment_byte_count = (d_segment[segment_idx].data_compressed_size + 15) & ~15;
-    const size_t segment_in_offset = d_segment[segment_idx].data_temp_index;
+    // Get info about the segment (use dummy values if invalid to avoid branches before barrier)
+    const unsigned int segment_byte_count = is_valid_segment ? 
+        (d_segment[segment_idx].data_compressed_size + 15) & ~15 : 0;
+    const size_t segment_in_offset = is_valid_segment ? 
+        d_segment[segment_idx].data_temp_index : 0;
 
     // First thread of each warp (sub-group) reserves space
-    if(0 == local_x) {
+    if(0 == local_x && is_valid_segment) {
         // SYCL Atomic implementation
         auto atm = sycl::atomic_ref<unsigned int, 
                                    sycl::memory_order::relaxed, 
@@ -638,8 +639,14 @@ gpujpeg_huffman_encoder_compaction_kernel (
         s_out_ptrs[local_y] = (uint4*)(d_dest + segment_out_offset);
     }
 
-    // FIX: Must synchronize the WHOLE work-group so all threads see s_out_ptrs
+    // CRITICAL: Must synchronize ALL threads in work-group (including invalid segments)
+    // to avoid deadlock. All threads must reach this barrier.
     sycl::group_barrier(item.get_group());
+
+    // Early exit AFTER barrier for invalid segments
+    if(!is_valid_segment) {
+        return;
+    }
 
     // Prepare pointers
     const uint4 * d_in = local_x + (uint4*)(d_src + segment_in_offset);
@@ -1300,14 +1307,19 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
         auto _start_time = std::chrono::high_resolution_clock::now();
         sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
             sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size_encode), cgh);
+            auto d_component = coder->d_component;
+            auto d_segment = coder->d_segment;
+            auto segment_count = coder->segment_count;
+            auto d_temp_huffman = coder->d_temp_huffman;
+            auto d_output_byte_count = huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count;
             cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
                             [local_mem,
-                             d_component = coder->d_component,
-                             d_segment = coder->d_segment,
+                             d_component,
+                             d_segment,
                              comp_count,
-                             segment_count = coder->segment_count,
-                             d_temp_huffman = coder->d_temp_huffman,
-                             d_output_byte_count = huffman_gpu_encoder->d_gpujpeg_huffman_output_byte_count,
+                             segment_count,
+                             d_temp_huffman,
+                             d_output_byte_count,
                              local_order_natural,
                              local_table_huffman](sycl::nd_item<3> item) {
                 gpujpeg_huffman_encoder_encode_kernel(item, local_mem,
@@ -1534,12 +1546,12 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
         gpujpeg_cuda_check_error("Huffman encoder output allocation failed", return -1);
     }
 
-// Run output compaction kernel (one warp per segment)
-const dim3 compaction_thread(32, WARPS_NUM, 1);
-const dim3 compaction_grid = gpujpeg_huffman_gpu_encoder_grid_size(gpujpeg_div_and_round_up(coder->segment_count, WARPS_NUM));
+    // Run output compaction kernel (one warp per segment)
+    const dim3 compaction_thread(32, WARPS_NUM, 1);
+    const dim3 compaction_grid = gpujpeg_huffman_gpu_encoder_grid_size(gpujpeg_div_and_round_up(coder->segment_count, WARPS_NUM));
 
-// Shared memory size for pointers
-size_t shared_mem_size_compaction = WARPS_NUM * sizeof(uint4*);
+    // Shared memory size for pointers
+    size_t shared_mem_size_compaction = WARPS_NUM * sizeof(uint4*);
 
 #ifdef GPUJPEG_USE_SYCL
     sycl::queue* sycl_q = coder->stream;
@@ -1555,7 +1567,8 @@ size_t shared_mem_size_compaction = WARPS_NUM * sizeof(uint4*);
                                compaction_thread.y, 
                                compaction_thread.x);
 
-    sycl_q->submit([&](sycl::handler& cgh) {
+    auto _start_time = std::chrono::high_resolution_clock::now();
+    sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
         // Correctly typed local accessor
         sycl::local_accessor<uint4*, 1> local_mem(sycl::range<1>(WARPS_NUM), cgh);
         
