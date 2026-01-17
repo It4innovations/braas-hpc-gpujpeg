@@ -706,7 +706,8 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder)
         }
         sycl::range<3> global_range(dct_grid.z * dct_block.z, dct_grid.y * dct_block.y, dct_grid.x * dct_block.x);
         sycl::range<3> local_range(dct_block.z, dct_block.y, dct_block.x);
-        sycl_q->submit([&](sycl::handler& cgh) {
+        auto _start_time = std::chrono::high_resolution_clock::now();
+        sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
             sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size), cgh);
             cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
                             [local_mem, block_count_x, block_count_y, 
@@ -719,6 +720,11 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder)
                                                    d_data, data_width, d_data_quantized, stride, d_quantization_table);
             });
         });
+        _sycl_e.wait();
+        auto _end_time = std::chrono::high_resolution_clock::now();
+        auto _elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(_end_time - _start_time).count();
+        fprintf(stderr, "[SYCL] Kernel gpujpeg_dct_gpu_kernel took %.3f ms\n", _elapsed_us / 1000.0);
+        GPUJPEG_DEBUG_PRINT_DEVICE_DATA(component->d_data_quantized, int16_t, 10);
 #else
         GPU_KERNEL_LAUNCH(gpujpeg_dct_gpu_kernel<WARP_COUNT>, dct_grid, dct_block, shared_mem_size, coder->stream,
             block_count_x,
@@ -729,6 +735,7 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder)
             component->data_width * GPUJPEG_BLOCK_SIZE,
             d_quantization_table
         );
+        GPUJPEG_DEBUG_PRINT_DEVICE_DATA(component->d_data_quantized, int16_t, 10);
 #endif
         gpujpeg_cuda_check_error("DCT kernel failed", return -1);
     }
@@ -790,7 +797,8 @@ gpujpeg_idct_gpu(struct gpujpeg_decoder* decoder)
         }
         sycl::range<3> global_range(dct_grid.z * dct_block.z, dct_grid.y * dct_block.y, dct_grid.x * dct_block.x);
         sycl::range<3> local_range(dct_block.z, dct_block.y, dct_block.x);
-        sycl_q->submit([&](sycl::handler& cgh) {
+        auto _start_time = std::chrono::high_resolution_clock::now();
+        sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
             sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size_idct), cgh);
             cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
                             [local_mem, 
@@ -801,6 +809,11 @@ gpujpeg_idct_gpu(struct gpujpeg_decoder* decoder)
                 gpujpeg_idct_gpu_kernel(item, local_mem, d_data_quantized, d_data, data_width, d_quantization_table);
             });
         });
+        _sycl_e.wait();
+        auto _end_time = std::chrono::high_resolution_clock::now();
+        auto _elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(_end_time - _start_time).count();
+        fprintf(stderr, "[SYCL] Kernel gpujpeg_idct_gpu_kernel took %.3f ms\n", _elapsed_us / 1000.0);
+        GPUJPEG_DEBUG_PRINT_DEVICE_DATA(component->d_data, uint8_t, 10);
 #else
         GPU_KERNEL_LAUNCH(gpujpeg_idct_gpu_kernel, dct_grid, dct_block, shared_mem_size_idct, coder->stream,
             component->d_data_quantized,
@@ -808,6 +821,7 @@ gpujpeg_idct_gpu(struct gpujpeg_decoder* decoder)
             component->data_width,
             d_quantization_table
         );
+        GPUJPEG_DEBUG_PRINT_DEVICE_DATA(component->d_data, uint8_t, 10);
 #endif
         gpujpeg_cuda_check_error("Inverse Integer DCT failed", return -1);
     }

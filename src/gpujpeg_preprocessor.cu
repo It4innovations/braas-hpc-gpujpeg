@@ -289,6 +289,7 @@ gpujpeg_preprocessor_launch_encode_kernel(struct gpujpeg_coder* coder, dim3 grid
                 }); \
             }); \
         } \
+        GPUJPEG_DEBUG_PRINT_DEVICE_DATA(coder->preprocessor.data[0].d_data, uint8_t, 10); \
         gpujpeg_cuda_check_error("Preprocessor encoding failed", return -1); \
         return 0;
 
@@ -304,6 +305,7 @@ gpujpeg_preprocessor_launch_encode_kernel(struct gpujpeg_coder* coder, dim3 grid
             width_div_mul, \
             width_div_shift \
         ); \
+        GPUJPEG_DEBUG_PRINT_DEVICE_DATA(coder->preprocessor.data[0].d_data, uint8_t, 10); \
         gpujpeg_cuda_check_error("Preprocessor encoding failed", return -1); \
         return 0;
 #endif
@@ -593,7 +595,8 @@ gpujpeg_preprocessor_flip_lines(struct gpujpeg_coder* coder)
         }
         sycl::range<3> global_range(grid.z * block.z, grid.y * block.y, grid.x * block.x);
         sycl::range<3> local_range(block.z, block.y, block.x);
-        sycl_q->submit([&](sycl::handler& cgh) {
+        auto _start_time = std::chrono::high_resolution_clock::now();
+        sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
             sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh);
             cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
                             [local_mem,
@@ -602,8 +605,14 @@ gpujpeg_preprocessor_flip_lines(struct gpujpeg_coder* coder)
                 vertical_flip_kernel(item, local_mem, d_data, width, height);
             });
         });
+        _sycl_e.wait();
+        auto _end_time = std::chrono::high_resolution_clock::now();
+        auto _elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(_end_time - _start_time).count();
+        fprintf(stderr, "[SYCL] Kernel vertical_flip_kernel took %.3f ms\n", _elapsed_us / 1000.0);
+        GPUJPEG_DEBUG_PRINT_DEVICE_DATA(coder->component[i].d_data, uint8_t, 10);
 #else
         GPU_KERNEL_LAUNCH(vertical_flip_kernel, grid, block, 0, coder->stream, (uint32_t*)coder->component[i].d_data, width, height);
+        GPUJPEG_DEBUG_PRINT_DEVICE_DATA(coder->component[i].d_data, uint8_t, 10);
 #endif
     }
     gpujpeg_cuda_check_error("Preprocessor flip failed", return -1);
@@ -785,6 +794,7 @@ gpujpeg_preprocessor_channel_remap(struct gpujpeg_coder* coder)
     }
 #undef SWITCH_KERNEL
     GPU_KERNEL_LAUNCH(kernel, grid, block, 0, coder->stream, coder->d_data_raw, width, pitch, height, mapping);
+    GPUJPEG_DEBUG_PRINT_DEVICE_DATA(coder->d_data_raw, uint8_t, 10);
 #endif
     gpujpeg_cuda_check_error("channel_remap_kernel failed", return -1);
     return 0;

@@ -177,7 +177,18 @@ static inline unsigned int GPU_DIM_Z(unsigned int /*d*/) { return 1u; }
 #define GPU_KERNEL_LAUNCH(kernel, grid, block, smem, stream, ...) \
     do { \
         GPUJPEG_KERNEL_LAUNCH_LOG(kernel, grid, block, smem, stream); \
+        gpuEvent_t _start_event, _stop_event; \
+        gpuEventCreate(&_start_event); \
+        gpuEventCreate(&_stop_event); \
+        gpuEventRecord(_start_event, stream); \
         kernel<<<grid, block, smem, stream>>>(__VA_ARGS__); \
+        gpuEventRecord(_stop_event, stream); \
+        gpuStreamSynchronize(stream); \
+        float _elapsed_ms = 0; \
+        gpuEventElapsedTime(&_elapsed_ms, _start_event, _stop_event); \
+        fprintf(stderr, "[CUDA] Kernel %s took %.3f ms\n", #kernel, _elapsed_ms); \
+        gpuEventDestroy(_start_event); \
+        gpuEventDestroy(_stop_event); \
     } while(0)
 
 // For CUDA/HIP, shared memory parameter is not needed
@@ -353,7 +364,18 @@ static inline unsigned int GPU_DIM_Z(unsigned int d) { return 1u; }
 #define GPU_KERNEL_LAUNCH(kernel, grid, block, smem, stream, ...) \
     do { \
         GPUJPEG_KERNEL_LAUNCH_LOG(kernel, grid, block, smem, stream); \
+        gpuEvent_t _start_event, _stop_event; \
+        gpuEventCreate(&_start_event); \
+        gpuEventCreate(&_stop_event); \
+        gpuEventRecord(_start_event, stream); \
         kernel<<<grid, block, smem, stream>>>(__VA_ARGS__); \
+        gpuEventRecord(_stop_event, stream); \
+        gpuStreamSynchronize(stream); \
+        float _elapsed_ms = 0; \
+        gpuEventElapsedTime(&_elapsed_ms, _start_event, _stop_event); \
+        fprintf(stderr, "[HIP] Kernel %s took %.3f ms\n", #kernel, _elapsed_ms); \
+        gpuEventDestroy(_start_event); \
+        gpuEventDestroy(_stop_event); \
     } while(0)
 
 // For CUDA/HIP, shared memory parameter is not needed
@@ -632,6 +654,7 @@ inline dim3 to_dim3(int v) { return dim3(v, 1, 1); }
             _sycl_q = gpujpeg_sycl::get_current_queue(); \
         } \
         auto _kernel_args = std::make_tuple(__VA_ARGS__); \
+        auto _start_time = std::chrono::high_resolution_clock::now(); \
         sycl::event _sycl_e = _sycl_q->submit([&](sycl::handler& cgh) { \
             sycl::range<3> _global_range(_grid.z * _block.z, _grid.y * _block.y, _grid.x * _block.x); \
             sycl::range<3> _local_range(_block.z, _block.y, _block.x); \
@@ -652,6 +675,10 @@ inline dim3 to_dim3(int v) { return dim3(v, 1, 1); }
                 }); \
             } \
         }); \
+        _sycl_e.wait(); \
+        auto _end_time = std::chrono::high_resolution_clock::now(); \
+        auto _elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(_end_time - _start_time).count(); \
+        fprintf(stderr, "[SYCL] Kernel %s took %.3f ms\n", #kernel, _elapsed_us / 1000.0); \
     } while(0)
 
 // Macro to declare shared memory parameter for SYCL kernels

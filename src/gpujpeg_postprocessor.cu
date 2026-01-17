@@ -279,6 +279,7 @@ gpujpeg_preprocessor_launch_decode_kernel(struct gpujpeg_coder* coder, dim3 grid
                 }); \
             }); \
         } \
+        GPUJPEG_DEBUG_PRINT_DEVICE_DATA(coder->d_data_raw, uint8_t, 10); \
         gpujpeg_cuda_check_error("Preprocessor encoding failed", return -1); \
         return 0;
 #else
@@ -291,6 +292,7 @@ gpujpeg_preprocessor_launch_decode_kernel(struct gpujpeg_coder* coder, dim3 grid
             image_width, \
             image_height \
         ); \
+        GPUJPEG_DEBUG_PRINT_DEVICE_DATA(coder->d_data_raw, uint8_t, 10); \
         gpujpeg_cuda_check_error("Preprocessor encoding failed", return -1); \
         return 0;
 #endif
