@@ -592,7 +592,74 @@ gpujpeg_huffman_encoder_allocation_kernel (
     }
 }
 
+#ifdef GPUJPEG_USE_SYCL
+/**
+ * Huffman coder output compaction kernel.
+ *
+ * @return void
+ */
+GPU_GLOBAL static void
+gpujpeg_huffman_encoder_compaction_kernel (
+    sycl::nd_item<3> item,
+    sycl::local_accessor<uint4*, 1> s_out_ptrs, // Fixed: Typed accessor for alignment
+    struct gpujpeg_segment* const d_segment,
+    const int segment_count,
+    const uint8_t* const d_src,
+    uint8_t* const d_dest,
+    unsigned int * d_gpujpeg_huffman_output_byte_count
+) {
+    // SYCL Indexing logic
+    const int local_x = item.get_local_id(2); // Equivalent to threadIdx.x (0-31)
+    const int local_y = item.get_local_id(1); // Equivalent to threadIdx.y (0-7)
+    
+    const int block_idx = item.get_group(2) + item.get_group(1) * item.get_group_range(2);
+    const int segment_idx = local_y + block_idx * item.get_local_range(1);
 
+    if(segment_idx >= segment_count) {
+        return;
+    }
+
+    // Get info about the segment
+    const unsigned int segment_byte_count = (d_segment[segment_idx].data_compressed_size + 15) & ~15;
+    const size_t segment_in_offset = d_segment[segment_idx].data_temp_index;
+
+    // First thread of each warp (sub-group) reserves space
+    if(0 == local_x) {
+        // SYCL Atomic implementation
+        auto atm = sycl::atomic_ref<unsigned int, 
+                                   sycl::memory_order::relaxed, 
+                                   sycl::memory_scope::device, 
+                                   sycl::access::address_space::global_space>(*d_gpujpeg_huffman_output_byte_count);
+        
+        const unsigned int segment_out_offset = atm.fetch_add(segment_byte_count);
+        
+        d_segment[segment_idx].data_compressed_index = segment_out_offset;
+        s_out_ptrs[local_y] = (uint4*)(d_dest + segment_out_offset);
+    }
+
+    // FIX: Must synchronize the WHOLE work-group so all threads see s_out_ptrs
+    sycl::group_barrier(item.get_group());
+
+    // Prepare pointers
+    const uint4 * d_in = local_x + (uint4*)(d_src + segment_in_offset);
+    uint4 * d_out = local_x + s_out_ptrs[local_y];
+    
+    // 512 bytes = 32 threads * 16 bytes (uint4)
+    unsigned int copy_iterations = segment_byte_count / 512; 
+
+    // Copy full 512-byte blocks
+    while(copy_iterations--) {
+        *d_out = *d_in;
+        d_out += 32;
+        d_in += 32;
+    }
+
+    // Copy remaining partial block
+    if((local_x * 16) < (segment_byte_count & 511)) {
+        *d_out = *d_in;
+    }
+}
+#else
 /**
  * Huffman coder output compaction kernel.
  *
@@ -662,6 +729,7 @@ gpujpeg_huffman_encoder_compaction_kernel (
         *d_out = *d_in;
     }
 }
+#endif
 
 // Threadblock size for CC 1.x kernel
 #define THREAD_BLOCK_SIZE 48
@@ -1464,21 +1532,31 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
         gpujpeg_cuda_check_error("Huffman encoder output allocation failed", return -1);
     }
 
-    // Run output compaction kernel (one warp per segment)
-    const dim3 compaction_thread(32, WARPS_NUM);
-    const dim3 compaction_grid = gpujpeg_huffman_gpu_encoder_grid_size(gpujpeg_div_and_round_up(coder->segment_count, WARPS_NUM));
-    size_t shared_mem_size_compaction = WARPS_NUM * sizeof(uint4*);
+// Run output compaction kernel (one warp per segment)
+const dim3 compaction_thread(32, WARPS_NUM, 1);
+const dim3 compaction_grid = gpujpeg_huffman_gpu_encoder_grid_size(gpujpeg_div_and_round_up(coder->segment_count, WARPS_NUM));
+
+// Shared memory size for pointers
+size_t shared_mem_size_compaction = WARPS_NUM * sizeof(uint4*);
+
 #ifdef GPUJPEG_USE_SYCL
-    GPUJPEG_KERNEL_LAUNCH_LOG(gpujpeg_huffman_encoder_compaction_kernel, compaction_grid, compaction_thread, shared_mem_size_compaction, coder->stream);
     sycl::queue* sycl_q = coder->stream;
     if (!sycl_q) {
         sycl_q = gpujpeg_sycl::get_current_queue();
     }
-    sycl::range<3> global_range(compaction_grid.z * compaction_thread.z, compaction_grid.y * compaction_thread.y, compaction_grid.x * compaction_thread.x);
-    sycl::range<3> local_range(compaction_thread.z, compaction_thread.y, compaction_thread.x);
-    auto _start_time = std::chrono::high_resolution_clock::now();
-    sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
-        sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size_compaction), cgh);
+
+    // Map dim3 (x,y,z) to SYCL range (z,y,x) correctly
+    sycl::range<3> global_range(compaction_grid.z * compaction_thread.z, 
+                                compaction_grid.y * compaction_thread.y, 
+                                compaction_grid.x * compaction_thread.x);
+    sycl::range<3> local_range(compaction_thread.z, 
+                               compaction_thread.y, 
+                               compaction_thread.x);
+
+    sycl_q->submit([&](sycl::handler& cgh) {
+        // Correctly typed local accessor
+        sycl::local_accessor<uint4*, 1> local_mem(sycl::range<1>(WARPS_NUM), cgh);
+        
         cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
                         [local_mem,
                          d_segment = coder->d_segment,
