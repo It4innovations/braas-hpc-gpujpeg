@@ -541,12 +541,13 @@ gpujpeg_huffman_encoder_allocation_kernel (
     // offsets of segments
 #ifdef GPUJPEG_USE_SYCL
     unsigned int* s_segment_offsets = reinterpret_cast<unsigned int*>(_sycl_shared_mem.get_multi_ptr<sycl::access::decorated::no>().get());
+    //auto s_segment_offsets = local_mem.template get_multi_ptr<sycl::access::decorated::no>().get();
 #else
     GPU_SHARED unsigned int s_segment_offsets[512];
 #endif
 
 #ifdef GPUJPEG_USE_SYCL
-    auto sg = item.get_sub_group();
+    auto sg = item.get_group();
 #endif
 
     // cumulative sum of bytes of all segments
@@ -706,7 +707,7 @@ gpujpeg_huffman_encoder_compaction_kernel (
 
     // we need to synchronize all our warps here to ensure s_out_ptrs is guaranteed to be provided on any thread.
 #ifdef GPUJPEG_USE_SYCL
-    auto sg = item.get_sub_group();
+    auto sg = item.get_group();
     sycl::group_barrier(sg);
 #else
     GPU_SYNCTHREADS();
@@ -1510,6 +1511,7 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
         auto _start_time = std::chrono::high_resolution_clock::now();
         sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
             sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size_allocation), cgh);
+            //sycl::local_accessor<unsigned int, 1> local_mem(sycl::range<1>(512), cgh);
             cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
                             [local_mem,
                              d_segment = coder->d_segment,
