@@ -545,6 +545,10 @@ gpujpeg_huffman_encoder_allocation_kernel (
     GPU_SHARED unsigned int s_segment_offsets[512];
 #endif
 
+#ifdef GPUJPEG_USE_SYCL
+    auto sg = item.get_sub_group();
+#endif
+
     // cumulative sum of bytes of all segments
     unsigned int total_byte_count = 0;
 
@@ -557,7 +561,11 @@ gpujpeg_huffman_encoder_allocation_kernel (
                 : 0;
 
         // first thread runs a sort of serial prefix sum over the segment sizes to get their offsets
-        GPU_SYNCTHREADS();
+#ifdef GPUJPEG_USE_SYCL
+    sycl::group_barrier(sg);
+#else
+    GPU_SYNCTHREADS();
+#endif
         if(0 == GPU_THREAD_IDX_X) {
             #pragma unroll 4
             for(int i = 0; i < 512; i++) {
@@ -566,7 +574,11 @@ gpujpeg_huffman_encoder_allocation_kernel (
                 total_byte_count += segment_size;
             }
         }
-        GPU_SYNCTHREADS();
+#ifdef GPUJPEG_USE_SYCL
+    sycl::group_barrier(sg);
+#else
+    GPU_SYNCTHREADS();
+#endif
 
         // all threads write offsets back into corresponding segment structures
         if(segment_idx < segment_count) {
@@ -626,7 +638,12 @@ gpujpeg_huffman_encoder_compaction_kernel (
     }
 
     // we need to synchronize all our warps here to ensure s_out_ptrs is guaranteed to be provided on any thread.
+#ifdef GPUJPEG_USE_SYCL
+    auto sg = item.get_sub_group();
+    sycl::group_barrier(sg);
+#else
     GPU_SYNCTHREADS();
+#endif
 
     // all threads read output buffer offset for their segment and prepare input and output pointers and number of copy iterations
     const uint4 * d_in = GPU_THREAD_IDX_X + (uint4*)(d_src + segment_in_offset);

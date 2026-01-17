@@ -265,11 +265,12 @@ gpujpeg_dct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA
                     -1024.0f  // = 8 * -128 ... level shift sum for all 8 coefficients
     );
 
-// #ifdef GPUJPEG_USE_SYCL
-//     // auto sg = item.get_sub_group();
-//     // sycl::group_barrier(sg);
-//     GPU_SYNCTHREADS();
-// #endif
+#ifdef GPUJPEG_USE_SYCL
+    auto sg = item.get_sub_group();
+    sycl::group_barrier(sg);
+#else
+    GPU_SYNCTHREADS();
+#endif
 
     // read coefficients back - each thread reads one row (no need to sync - only threads within same warp work on each block)
     // ... and transform the row horizontally
@@ -521,7 +522,12 @@ gpujpeg_idct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMM
 				* quantization_table[GPU_THREAD_IDX_X * 8 + GPU_THREAD_IDX_Y];
 	}
 	
-	GPU_SYNCTHREADS();
+#ifdef GPUJPEG_USE_SYCL
+    auto sg = item.get_sub_group();
+    sycl::group_barrier(sg);
+#else
+    GPU_SYNCTHREADS();
+#endif
 
 	float x[8];
 
@@ -584,7 +590,11 @@ gpujpeg_idct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMM
 			+ (GPU_THREAD_IDX_Y + ((firstByteOfActualBlock / output_stride) * 7))
 					* output_stride;
 
-	GPU_SYNCTHREADS();
+#ifdef GPUJPEG_USE_SYCL
+    sycl::group_barrier(sg);
+#else
+    GPU_SYNCTHREADS();
+#endif
 
 #if GPUJPEG_IDCT_USE_ASM
 	//here the data are being processed by rows - each thread processes one row
