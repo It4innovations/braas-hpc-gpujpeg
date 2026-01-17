@@ -739,28 +739,29 @@ inline dim3 to_dim3(int v) { return dim3(v, 1, 1); }
                 gpuError_t _err = gpuMemcpy(_host_data, ptr, (count) * sizeof(type), gpuMemcpyDeviceToHost); \
                 if (_err == gpuSuccess) { \
                     fprintf(stderr, "[GPUJPEG_DEBUG] Device data at %p (%s[%d]):\n", (void*)(ptr), #type, (int)(count)); \
+                    const char* _type_str = #type; \
                     for (int _i = 0; _i < (int)(count); _i++) { \
                         fprintf(stderr, "  [%d] = ", _i); \
-                        if (sizeof(type) == sizeof(float)) { \
-                            fprintf(stderr, "%f\n", (double)*((float*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(double)) { \
-                            fprintf(stderr, "%f\n", *((double*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(int)) { \
-                            fprintf(stderr, "%d\n", *((int*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(unsigned int)) { \
-                            fprintf(stderr, "%u\n", *((unsigned int*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(char)) { \
-                            fprintf(stderr, "%d\n", (int)*((char*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(unsigned char)) { \
-                            fprintf(stderr, "%u\n", (unsigned int)*((unsigned char*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(short)) { \
-                            fprintf(stderr, "%d\n", (int)*((short*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(unsigned short)) { \
-                            fprintf(stderr, "%u\n", (unsigned int)*((unsigned short*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(long)) { \
-                            fprintf(stderr, "%ld\n", *((long*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(unsigned long)) { \
-                            fprintf(stderr, "%lu\n", *((unsigned long*)&_host_data[_i])); \
+                        if (strcmp(_type_str, "float") == 0) { \
+                            fprintf(stderr, "%f\n", (double)_host_data[_i]); \
+                        } else if (strcmp(_type_str, "double") == 0) { \
+                            fprintf(stderr, "%f\n", _host_data[_i]); \
+                        } else if (strcmp(_type_str, "int") == 0) { \
+                            fprintf(stderr, "%d\n", _host_data[_i]); \
+                        } else if (strcmp(_type_str, "unsigned int") == 0 || strcmp(_type_str, "unsigned") == 0 || strcmp(_type_str, "uint32_t") == 0) { \
+                            fprintf(stderr, "%u\n", _host_data[_i]); \
+                        } else if (strcmp(_type_str, "char") == 0 || strcmp(_type_str, "int8_t") == 0) { \
+                            fprintf(stderr, "%d\n", (int)_host_data[_i]); \
+                        } else if (strcmp(_type_str, "unsigned char") == 0 || strcmp(_type_str, "uint8_t") == 0) { \
+                            fprintf(stderr, "%u\n", (unsigned int)_host_data[_i]); \
+                        } else if (strcmp(_type_str, "short") == 0 || strcmp(_type_str, "int16_t") == 0) { \
+                            fprintf(stderr, "%d\n", (int)_host_data[_i]); \
+                        } else if (strcmp(_type_str, "unsigned short") == 0 || strcmp(_type_str, "uint16_t") == 0) { \
+                            fprintf(stderr, "%u\n", (unsigned int)_host_data[_i]); \
+                        } else if (strcmp(_type_str, "long") == 0 || strcmp(_type_str, "int64_t") == 0) { \
+                            fprintf(stderr, "%ld\n", (long)_host_data[_i]); \
+                        } else if (strcmp(_type_str, "unsigned long") == 0 || strcmp(_type_str, "uint64_t") == 0) { \
+                            fprintf(stderr, "%lu\n", (unsigned long)_host_data[_i]); \
                         } else { \
                             fprintf(stderr, "0x"); \
                             for (size_t _b = 0; _b < sizeof(type); _b++) { \
