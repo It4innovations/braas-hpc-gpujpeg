@@ -1233,7 +1233,7 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
         auto _end_time = std::chrono::high_resolution_clock::now();
         auto _elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(_end_time - _start_time).count();
         fprintf(stderr, "[SYCL] Kernel gpujpeg_huffman_encoder_encode_kernel took %.3f ms\n", _elapsed_us / 1000.0);
-        GPUJPEG_DEBUG_PRINT_DEVICE_DATA(coder->d_temp_huffman, uint32_t, 10);
+        GPUJPEG_DEBUG_PRINT_DEVICE_DATA(coder->d_temp_huffman, uint8_t, 10);
 #else
         GPU_KERNEL_LAUNCH(gpujpeg_huffman_encoder_encode_kernel, grid, thread, shared_mem_size_encode, coder->stream,
             coder->d_component,
@@ -1245,7 +1245,7 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
             local_order_natural,
             local_table_huffman
         );
-        GPUJPEG_DEBUG_PRINT_DEVICE_DATA(coder->d_temp_huffman, uint32_t, 10);
+        GPUJPEG_DEBUG_PRINT_DEVICE_DATA(coder->d_temp_huffman, uint8_t, 10);
 #endif
         gpujpeg_cuda_check_error("Huffman encoding failed", return -1);
     } else {
