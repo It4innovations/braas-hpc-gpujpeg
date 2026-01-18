@@ -265,17 +265,10 @@ gpujpeg_dct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA
                     -1024.0f  // = 8 * -128 ... level shift sum for all 8 coefficients
     );
 
-#ifdef GPUJPEG_USE_SYCL
-    auto sg = item.get_sub_group();
-    sycl::group_barrier(sg);
-#endif
 
     // read coefficients back - each thread reads one row (no need to sync - only threads within same warp work on each block)
     // ... and transform the row horizontally
-#ifdef GPUJPEG_USE_SYCL    
-    volatile
-#endif    
-    dct_t * s_src = s_transposition + SHARED_STRIDE * dct_idx;
+    volatile dct_t * s_src = s_transposition + SHARED_STRIDE * dct_idx;
     dct_t dct0, dct1, dct2, dct3, dct4, dct5, dct6, dct7;
     gpujpeg_dct_gpu(s_src[0], s_src[1], s_src[2], s_src[3], s_src[4], s_src[5], s_src[6], s_src[7],
                     dct0, dct1, dct2, dct3, dct4, dct5, dct6, dct7);
@@ -700,6 +693,31 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder)
             1
         );
         dim3 dct_block(4 * 8, WARP_COUNT);
+#ifdef GPUJPEG_USE_SYCL
+        GPUJPEG_KERNEL_LAUNCH_LOG(gpujpeg_dct_gpu_kernel<WARP_COUNT>, dct_grid, dct_block, shared_mem_size, coder->stream);
+        sycl::queue* sycl_q = coder->stream;
+        if (!sycl_q) {
+            sycl_q = gpujpeg_sycl::get_current_queue();
+        }
+        sycl::range<3> global_range(dct_grid.z * dct_block.z, dct_grid.y * dct_block.y, dct_grid.x * dct_block.x);
+        sycl::range<3> local_range(dct_block.z, dct_block.y, dct_block.x);
+        auto _start_time = std::chrono::high_resolution_clock::now();
+        sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
+            sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size), cgh);
+            cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                            [local_mem, block_count_x, block_count_y, 
+                             d_data = component->d_data, 
+                             data_width = component->data_width,
+                             d_data_quantized = component->d_data_quantized,
+                             stride = component->data_width * GPUJPEG_BLOCK_SIZE,
+                             d_quantization_table](sycl::nd_item<3> item) {
+                gpujpeg_dct_gpu_kernel<WARP_COUNT>(item, local_mem, block_count_x, block_count_y, 
+                                                   d_data, data_width, d_data_quantized, stride, d_quantization_table);
+            });
+        });
+        GPUJPEG_SYCL_KERNEL_WAIT_AND_PROFILE(_sycl_e, _start_time, "gpujpeg_dct_gpu_kernel");
+
+#else
         GPU_KERNEL_LAUNCH(gpujpeg_dct_gpu_kernel<WARP_COUNT>, dct_grid, dct_block, shared_mem_size, coder->stream,
             block_count_x,
             block_count_y,
@@ -709,6 +727,7 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder)
             component->data_width * GPUJPEG_BLOCK_SIZE,
             d_quantization_table
         );
+#endif
         gpujpeg_cuda_check_error("DCT kernel failed", return -1);
     }
 
@@ -761,12 +780,36 @@ gpujpeg_idct_gpu(struct gpujpeg_decoder* decoder)
 				(GPUJPEG_IDCT_BLOCK_X * GPUJPEG_IDCT_BLOCK_Y * GPUJPEG_IDCT_BLOCK_Z) / GPUJPEG_BLOCK_SIZE), 1);
         dim3 dct_block(GPUJPEG_IDCT_BLOCK_X, GPUJPEG_IDCT_BLOCK_Y, GPUJPEG_IDCT_BLOCK_Z);
  
+#ifdef GPUJPEG_USE_SYCL
+        GPUJPEG_KERNEL_LAUNCH_LOG(gpujpeg_idct_gpu_kernel, dct_grid, dct_block, shared_mem_size_idct, coder->stream);
+        sycl::queue* sycl_q = coder->stream;
+        if (!sycl_q) {
+            sycl_q = gpujpeg_sycl::get_current_queue();
+        }
+        sycl::range<3> global_range(dct_grid.z * dct_block.z, dct_grid.y * dct_block.y, dct_grid.x * dct_block.x);
+        sycl::range<3> local_range(dct_block.z, dct_block.y, dct_block.x);
+        auto _start_time = std::chrono::high_resolution_clock::now();
+        sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
+            sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size_idct), cgh);
+            cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                            [local_mem, 
+                             d_data_quantized = component->d_data_quantized,
+                             d_data = component->d_data,
+                             data_width = component->data_width,
+                             d_quantization_table](sycl::nd_item<3> item) {
+                gpujpeg_idct_gpu_kernel(item, local_mem, d_data_quantized, d_data, data_width, d_quantization_table);
+            });
+        });
+        GPUJPEG_SYCL_KERNEL_WAIT_AND_PROFILE(_sycl_e, _start_time, "gpujpeg_idct_gpu_kernel");
+
+#else
         GPU_KERNEL_LAUNCH(gpujpeg_idct_gpu_kernel, dct_grid, dct_block, shared_mem_size_idct, coder->stream,
             component->d_data_quantized,
             component->d_data,
             component->data_width,
             d_quantization_table
         );
+#endif
         gpujpeg_cuda_check_error("Inverse Integer DCT failed", return -1);
     }
 

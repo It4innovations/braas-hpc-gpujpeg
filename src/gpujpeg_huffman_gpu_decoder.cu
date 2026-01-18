@@ -695,6 +695,33 @@ gpujpeg_huffman_gpu_decoder_decode(struct gpujpeg_decoder* decoder)
 #endif
     
     // Setup GPU tables (one thread for each of 65536 entries)
+#ifdef GPUJPEG_USE_SYCL
+    GPUJPEG_KERNEL_LAUNCH_LOG(gpujpeg_huffman_decoder_table_kernel, dim3(256), dim3(256), 0, coder->stream);
+    sycl::queue* sycl_q = coder->stream;
+    if (!sycl_q) {
+        sycl_q = gpujpeg_sycl::get_current_queue();
+    }
+    sycl::range<3> global_range(256, 256, 1);
+    sycl::range<3> local_range(256, 1, 1);
+    auto _start_time = std::chrono::high_resolution_clock::now();
+    sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
+        sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh);
+        cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                        [local_mem,
+                         huffman_gpu_decoder = *decoder->huffman_gpu_decoder,
+                         d_table_huffman_lum_dc = decoder->d_table_huffman[GPUJPEG_COMPONENT_LUMINANCE][GPUJPEG_HUFFMAN_DC],
+                         d_table_huffman_lum_ac = decoder->d_table_huffman[GPUJPEG_COMPONENT_LUMINANCE][GPUJPEG_HUFFMAN_AC],
+                         d_table_huffman_chr_dc = decoder->d_table_huffman[GPUJPEG_COMPONENT_CHROMINANCE][GPUJPEG_HUFFMAN_DC],
+                         d_table_huffman_chr_ac = decoder->d_table_huffman[GPUJPEG_COMPONENT_CHROMINANCE][GPUJPEG_HUFFMAN_AC]](sycl::nd_item<3> item) {
+            gpujpeg_huffman_decoder_table_kernel(item, local_mem, huffman_gpu_decoder,
+                                                d_table_huffman_lum_dc, d_table_huffman_lum_ac,
+                                                d_table_huffman_chr_dc, d_table_huffman_chr_ac);
+        });
+    });
+    
+    GPUJPEG_SYCL_KERNEL_WAIT_AND_PROFILE(_sycl_e, _start_time, "gpujpeg_huffman_decoder_table_kernel");    
+
+#else
     GPU_KERNEL_LAUNCH(gpujpeg_huffman_decoder_table_kernel, dim3(256), dim3(256), 0, coder->stream,
         *decoder->huffman_gpu_decoder,
         decoder->d_table_huffman[GPUJPEG_COMPONENT_LUMINANCE][GPUJPEG_HUFFMAN_DC],
@@ -702,6 +729,7 @@ gpujpeg_huffman_gpu_decoder_decode(struct gpujpeg_decoder* decoder)
         decoder->d_table_huffman[GPUJPEG_COMPONENT_CHROMINANCE][GPUJPEG_HUFFMAN_DC],
         decoder->d_table_huffman[GPUJPEG_COMPONENT_CHROMINANCE][GPUJPEG_HUFFMAN_AC]
     );
+#endif
     gpujpeg_cuda_check_error("Huffman decoder table setup failed", return -1);
 
 #ifdef HUFFMAN_GPU_CONST_TABLES
@@ -731,6 +759,36 @@ gpujpeg_huffman_gpu_decoder_decode(struct gpujpeg_decoder* decoder)
     dim3 grid(gpujpeg_div_and_round_up(decoder->segment_count, THREADS_PER_TBLOCK));
     size_t shared_mem_size_decoder = 2 * THREADS_PER_TBLOCK * sizeof(uint4);
     if(comp_count == 1) {
+#ifdef GPUJPEG_USE_SYCL
+        GPUJPEG_KERNEL_LAUNCH_LOG(gpujpeg_huffman_decoder_decode_kernel<true COMMA THREADS_PER_TBLOCK>, grid, thread, shared_mem_size_decoder, coder->stream);
+        sycl::queue* sycl_q = coder->stream;
+        if (!sycl_q) {
+            sycl_q = gpujpeg_sycl::get_current_queue();
+        }
+        sycl::range<3> global_range(grid.z * thread.z, grid.y * thread.y, grid.x * thread.x);
+        sycl::range<3> local_range(thread.z, thread.y, thread.x);
+        auto _start_time = std::chrono::high_resolution_clock::now();
+        sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
+            sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size_decoder), cgh);
+            cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                            [local_mem,
+                             huffman_gpu_decoder = *decoder->huffman_gpu_decoder,
+                             d_component = coder->d_component,
+                             d_segment = coder->d_segment,
+                             comp_count,
+                             segment_count = decoder->segment_count,
+                             d_data_compressed = coder->d_data_compressed,
+                             d_block_list = coder->d_block_list,
+                             d_data_quantized = coder->d_data_quantized](sycl::nd_item<3> item) {
+                gpujpeg_huffman_decoder_decode_kernel<true, THREADS_PER_TBLOCK>(item, local_mem,
+                    huffman_gpu_decoder, d_component, d_segment, comp_count, segment_count,
+                    d_data_compressed, d_block_list, d_data_quantized);
+            });
+        });
+        
+        GPUJPEG_SYCL_KERNEL_WAIT_AND_PROFILE(_sycl_e, _start_time, "gpujpeg_huffman_decoder_decode_kernel<true>");
+
+#else
         GPU_KERNEL_LAUNCH((gpujpeg_huffman_decoder_decode_kernel<true, THREADS_PER_TBLOCK>), grid, thread, shared_mem_size_decoder, coder->stream,
             *decoder->huffman_gpu_decoder,
             coder->d_component, 
@@ -741,7 +799,38 @@ gpujpeg_huffman_gpu_decoder_decode(struct gpujpeg_decoder* decoder)
             coder->d_block_list,
             coder->d_data_quantized
         );
+
+#endif
     } else {
+#ifdef GPUJPEG_USE_SYCL
+        GPUJPEG_KERNEL_LAUNCH_LOG(gpujpeg_huffman_decoder_decode_kernel<false COMMA THREADS_PER_TBLOCK>, grid, thread, shared_mem_size_decoder, coder->stream);
+        sycl::queue* sycl_q = coder->stream;
+        if (!sycl_q) {
+            sycl_q = gpujpeg_sycl::get_current_queue();
+        }
+        sycl::range<3> global_range(grid.z * thread.z, grid.y * thread.y, grid.x * thread.x);
+        sycl::range<3> local_range(thread.z, thread.y, thread.x);
+        auto _start_time = std::chrono::high_resolution_clock::now();
+        sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
+            sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size_decoder), cgh);
+            cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                            [local_mem,
+                             huffman_gpu_decoder = *decoder->huffman_gpu_decoder,
+                             d_component = coder->d_component,
+                             d_segment = coder->d_segment,
+                             comp_count,
+                             segment_count = decoder->segment_count,
+                             d_data_compressed = coder->d_data_compressed,
+                             d_block_list = coder->d_block_list,
+                             d_data_quantized = coder->d_data_quantized](sycl::nd_item<3> item) {
+                gpujpeg_huffman_decoder_decode_kernel<false, THREADS_PER_TBLOCK>(item, local_mem,
+                    huffman_gpu_decoder, d_component, d_segment, comp_count, segment_count,
+                    d_data_compressed, d_block_list, d_data_quantized);
+            });
+        });
+        GPUJPEG_SYCL_KERNEL_WAIT_AND_PROFILE(_sycl_e, _start_time, "gpujpeg_huffman_decoder_decode_kernel<false>");
+
+#else
         GPU_KERNEL_LAUNCH((gpujpeg_huffman_decoder_decode_kernel<false, THREADS_PER_TBLOCK>), grid, thread, shared_mem_size_decoder, coder->stream,
             *decoder->huffman_gpu_decoder,
             coder->d_component, 
@@ -752,6 +841,7 @@ gpujpeg_huffman_gpu_decoder_decode(struct gpujpeg_decoder* decoder)
             coder->d_block_list,
             coder->d_data_quantized
         );
+#endif
     }
     gpujpeg_cuda_check_error("Huffman decoding failed", return -1);
     

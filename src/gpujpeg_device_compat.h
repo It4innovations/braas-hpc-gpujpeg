@@ -13,7 +13,7 @@
 
 #include <stddef.h>  // for size_t
 
-// Uncomment to enable kernel launch logging
+// (Un)comment to enable kernel launch logging
 #define GPUJPEG_DEBUG_KERNEL_LAUNCH
 
 // Determine which GPU backend to use
@@ -173,12 +173,33 @@ static inline unsigned int GPU_DIM_Z(unsigned int /*d*/) { return 1u; }
 #define GPU_DIM_Z(d) (__builtin_types_compatible_p(__typeof__(d), dim3) ? (d).z : 1u)
 #endif
 
+#ifdef GPUJPEG_DEBUG_KERNEL_LAUNCH
+#define GPU_KERNEL_LAUNCH(kernel, grid, block, smem, stream, ...) \
+    do { \
+        GPUJPEG_KERNEL_LAUNCH_LOG(kernel, grid, block, smem, stream); \
+        gpuEvent_t _start_event, _stop_event; \
+        gpuEventCreate(&_start_event); \
+        gpuEventCreate(&_stop_event); \
+        gpuEventRecord(_start_event, stream); \
+        kernel<<<grid, block, smem, stream>>>(__VA_ARGS__); \
+        gpuEventRecord(_stop_event, stream); \
+        gpuStreamSynchronize(stream); \
+        float _elapsed_ms = 0; \
+        gpuEventElapsedTime(&_elapsed_ms, _start_event, _stop_event); \
+        fprintf(stderr, "[CUDA] Kernel %s took %.3f ms\n", #kernel, _elapsed_ms); \
+        gpuEventDestroy(_start_event); \
+        gpuEventDestroy(_stop_event); \
+    } while(0)
+#else
+
 // Kernel launch syntax (CUDA uses <<<>>> syntax natively)
 #define GPU_KERNEL_LAUNCH(kernel, grid, block, smem, stream, ...) \
     do { \
         GPUJPEG_KERNEL_LAUNCH_LOG(kernel, grid, block, smem, stream); \
         kernel<<<grid, block, smem, stream>>>(__VA_ARGS__); \
     } while(0)
+
+#endif
 
 // For CUDA/HIP, shared memory parameter is not needed
 #define GPU_SHARED_MEM_PARAM /* empty */
@@ -349,12 +370,34 @@ static inline unsigned int GPU_DIM_Z(unsigned int d) { return 1u; }
 #define GPU_DIM_Z(d) (__builtin_types_compatible_p(__typeof__(d), dim3) ? (d).z : 1u)
 #endif
 
+#ifdef GPUJPEG_DEBUG_KERNEL_LAUNCH
+// Kernel launch syntax (HIP also uses <<<>>> syntax)
+#define GPU_KERNEL_LAUNCH(kernel, grid, block, smem, stream, ...) \
+    do { \
+        GPUJPEG_KERNEL_LAUNCH_LOG(kernel, grid, block, smem, stream); \
+        gpuEvent_t _start_event, _stop_event; \
+        gpuEventCreate(&_start_event); \
+        gpuEventCreate(&_stop_event); \
+        gpuEventRecord(_start_event, stream); \
+        kernel<<<grid, block, smem, stream>>>(__VA_ARGS__); \
+        gpuEventRecord(_stop_event, stream); \
+        gpuStreamSynchronize(stream); \
+        float _elapsed_ms = 0; \
+        gpuEventElapsedTime(&_elapsed_ms, _start_event, _stop_event); \
+        fprintf(stderr, "[HIP] Kernel %s took %.3f ms\n", #kernel, _elapsed_ms); \
+        gpuEventDestroy(_start_event); \
+        gpuEventDestroy(_stop_event); \
+    } while(0)
+#else
+
 // Kernel launch syntax (HIP also uses <<<>>> syntax)
 #define GPU_KERNEL_LAUNCH(kernel, grid, block, smem, stream, ...) \
     do { \
         GPUJPEG_KERNEL_LAUNCH_LOG(kernel, grid, block, smem, stream); \
         kernel<<<grid, block, smem, stream>>>(__VA_ARGS__); \
     } while(0)
+
+#endif
 
 // For CUDA/HIP, shared memory parameter is not needed
 #define GPU_SHARED_MEM_PARAM /* empty */
@@ -619,42 +662,6 @@ inline dim3 to_dim3(const dim3& d) { return d; }
 inline dim3 to_dim3(unsigned int v) { return dim3(v, 1, 1); }
 inline dim3 to_dim3(int v) { return dim3(v, 1, 1); }
 
-// Helper macro for launching SYCL kernels
-#define sycl_launch_kernel(q, grid, block, smem, kernel) \
-    do { \
-        sycl::queue* _sycl_q = (q); \
-        if (!_sycl_q) { \
-            _sycl_q = gpujpeg_sycl::get_current_queue(); \
-        } \
-        sycl::event _sycl_e = _sycl_q->submit([&](sycl::handler& cgh) { \
-            sycl::range<3> _global_range((grid).z * (block).z, (grid).y * (block).y, (grid).x * (block).x); \
-            sycl::range<3> _local_range((block).z, (block).y, (block).x); \
-            if ((smem) > 0) { \
-                sycl::local_accessor<uint8_t, 1> _local_mem(sycl::range<1>(smem), cgh); \
-                cgh.parallel_for(sycl::nd_range<3>(_global_range, _local_range), \
-                                [=](sycl::nd_item<3> item) { \
-                    kernel(item, _local_mem); \
-                }); \
-            } else { \
-                cgh.parallel_for(sycl::nd_range<3>(_global_range, _local_range), \
-                                [=](sycl::nd_item<3> item) { \
-                    kernel(item, sycl::local_accessor<uint8_t, 1>{}); \
-                }); \
-            } \
-        }); \
-    } while(0)
-
-// Macro for kernel launch - handle both cases with and without additional args
-#define GPU_KERNEL_LAUNCH(kernel, grid, block, smem, stream, ...) \
-    do { \
-        dim3 _grid = to_dim3(grid); \
-        dim3 _block = to_dim3(block); \
-        GPUJPEG_KERNEL_LAUNCH_LOG(kernel, _grid, _block, smem, stream); \
-        sycl_launch_kernel(stream, _grid, _block, smem, \
-            [=](sycl::nd_item<3> item, sycl::local_accessor<uint8_t, 1> shared_mem_accessor) { \
-                kernel(item, shared_mem_accessor __VA_OPT__(,) __VA_ARGS__); \
-            }); \
-    } while(0)
 
 // Macro to declare shared memory parameter for SYCL kernels
 #define GPU_SHARED_MEM_PARAM , sycl::local_accessor<uint8_t, 1> _sycl_shared_mem
@@ -714,28 +721,29 @@ inline dim3 to_dim3(int v) { return dim3(v, 1, 1); }
                 gpuError_t _err = gpuMemcpy(_host_data, ptr, (count) * sizeof(type), gpuMemcpyDeviceToHost); \
                 if (_err == gpuSuccess) { \
                     fprintf(stderr, "[GPUJPEG_DEBUG] Device data at %p (%s[%d]):\n", (void*)(ptr), #type, (int)(count)); \
+                    const char* _type_str = #type; \
                     for (int _i = 0; _i < (int)(count); _i++) { \
                         fprintf(stderr, "  [%d] = ", _i); \
-                        if (sizeof(type) == sizeof(float)) { \
-                            fprintf(stderr, "%f\n", (double)*((float*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(double)) { \
-                            fprintf(stderr, "%f\n", *((double*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(int)) { \
-                            fprintf(stderr, "%d\n", *((int*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(unsigned int)) { \
-                            fprintf(stderr, "%u\n", *((unsigned int*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(char)) { \
-                            fprintf(stderr, "%d\n", (int)*((char*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(unsigned char)) { \
-                            fprintf(stderr, "%u\n", (unsigned int)*((unsigned char*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(short)) { \
-                            fprintf(stderr, "%d\n", (int)*((short*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(unsigned short)) { \
-                            fprintf(stderr, "%u\n", (unsigned int)*((unsigned short*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(long)) { \
-                            fprintf(stderr, "%ld\n", *((long*)&_host_data[_i])); \
-                        } else if (sizeof(type) == sizeof(unsigned long)) { \
-                            fprintf(stderr, "%lu\n", *((unsigned long*)&_host_data[_i])); \
+                        if (strcmp(_type_str, "float") == 0) { \
+                            fprintf(stderr, "%f\n", (double)_host_data[_i]); \
+                        } else if (strcmp(_type_str, "double") == 0) { \
+                            fprintf(stderr, "%f\n", _host_data[_i]); \
+                        } else if (strcmp(_type_str, "int") == 0) { \
+                            fprintf(stderr, "%d\n", _host_data[_i]); \
+                        } else if (strcmp(_type_str, "unsigned int") == 0 || strcmp(_type_str, "unsigned") == 0 || strcmp(_type_str, "uint32_t") == 0) { \
+                            fprintf(stderr, "%u\n", _host_data[_i]); \
+                        } else if (strcmp(_type_str, "char") == 0 || strcmp(_type_str, "int8_t") == 0) { \
+                            fprintf(stderr, "%d\n", (int)_host_data[_i]); \
+                        } else if (strcmp(_type_str, "unsigned char") == 0 || strcmp(_type_str, "uint8_t") == 0) { \
+                            fprintf(stderr, "%u\n", (unsigned int)_host_data[_i]); \
+                        } else if (strcmp(_type_str, "short") == 0 || strcmp(_type_str, "int16_t") == 0) { \
+                            fprintf(stderr, "%d\n", (int)_host_data[_i]); \
+                        } else if (strcmp(_type_str, "unsigned short") == 0 || strcmp(_type_str, "uint16_t") == 0) { \
+                            fprintf(stderr, "%u\n", (unsigned int)_host_data[_i]); \
+                        } else if (strcmp(_type_str, "long") == 0 || strcmp(_type_str, "int64_t") == 0) { \
+                            fprintf(stderr, "%ld\n", (long)_host_data[_i]); \
+                        } else if (strcmp(_type_str, "unsigned long") == 0 || strcmp(_type_str, "uint64_t") == 0) { \
+                            fprintf(stderr, "%lu\n", (unsigned long)_host_data[_i]); \
                         } else { \
                             fprintf(stderr, "0x"); \
                             for (size_t _b = 0; _b < sizeof(type); _b++) { \
@@ -754,6 +762,21 @@ inline dim3 to_dim3(int v) { return dim3(v, 1, 1); }
         } while (0)
 #else
     #define GPUJPEG_DEBUG_PRINT_DEVICE_DATA(ptr, type, count) /* disabled */
+#endif
+
+// SYCL kernel timing macro (only for SYCL backend)
+#ifdef GPUJPEG_USE_SYCL
+    #ifdef GPUJPEG_DEBUG_KERNEL_LAUNCH
+        #define GPUJPEG_SYCL_KERNEL_WAIT_AND_PROFILE(sycl_event, start_time, kernel_name) \
+            do { \
+                (sycl_event).wait(); \
+                auto _end_time = std::chrono::high_resolution_clock::now(); \
+                auto _elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(_end_time - (start_time)).count(); \
+                fprintf(stderr, "[SYCL] Kernel %s took %.3f ms\n", kernel_name, _elapsed_us / 1000.0); \
+            } while(0)
+    #else
+        #define GPUJPEG_SYCL_KERNEL_WAIT_AND_PROFILE(sycl_event, start_time, kernel_name) /* disabled */
+    #endif
 #endif
 
 // Stream type for public API (using void* for maximum compatibility)

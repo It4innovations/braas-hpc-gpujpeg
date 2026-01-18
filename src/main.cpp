@@ -209,7 +209,7 @@ static int print_image_info_jpeg(const char *filename, int verbose) {
         fprintf(stderr, "Cannot read image contents.\n");
         return 1;
     }
-    struct gpujpeg_image_info info = { 0 };
+    struct gpujpeg_image_info info = {};
     if (gpujpeg_decoder_get_image_info2(jpeg, len, &info, verbose, GPUJPEG_COUNT_SEG_COUNT_REQ) == 0) {
         print_gpujpeg_image_parameters(info.param_image, false,
                                        gpujpeg_subsampling_get_name(info.param.comp_count, info.param.sampling_factor));
@@ -241,7 +241,7 @@ static int print_image_info(const char *filename, int verbose) {
     if (format == GPUJPEG_IMAGE_FILE_JPEG ) {
         return print_image_info_jpeg(filename, verbose);
     }
-    struct gpujpeg_image_parameters param_image = { 0 };
+    struct gpujpeg_image_parameters param_image = {};
     if ( gpujpeg_image_get_properties(filename, &param_image, 1) < 0 ) {
         fprintf(stderr, "Error getting raw image %s info!\n", filename);
         return 1;
@@ -478,8 +478,8 @@ main(int argc, char *argv[])
     int component_range = 0;
     int iterate = 1;
     bool debug = false;
-    struct coder_opts decoder_options[CODER_OPTS_COUNT + 1] = {0};
-    struct coder_opts encoder_options[CODER_OPTS_COUNT + 1] = {0};
+    struct coder_opts decoder_options[CODER_OPTS_COUNT + 1] = {};
+    struct coder_opts encoder_options[CODER_OPTS_COUNT + 1] = {};
 
     // Flags
     struct options opts = {.subsampling = GPUJPEG_SUBSAMPLING_UNKNOWN,

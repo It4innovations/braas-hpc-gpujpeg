@@ -256,6 +256,33 @@ gpujpeg_preprocessor_launch_decode_kernel(struct gpujpeg_coder* coder, dim3 grid
         coder->component[2].sampling_factor.horizontal, coder->component[2].sampling_factor.vertical,
         coder->component[3].sampling_factor.horizontal, coder->component[3].sampling_factor.vertical);
 
+#ifdef GPUJPEG_USE_SYCL
+#define LAUNCH_KERNEL(PIXEL_FORMAT, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
+        { \
+            sycl::queue* sycl_q = stream; \
+            if (!sycl_q) { \
+                sycl_q = gpujpeg_sycl::get_current_queue(); \
+            } \
+            sycl::range<3> global_range(grid.z * threads.z, grid.y * threads.y, grid.x * threads.x); \
+            sycl::range<3> local_range(threads.z, threads.y, threads.x); \
+            auto _start_time = std::chrono::high_resolution_clock::now(); \
+            sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) { \
+                sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh); \
+                cgh.parallel_for(sycl::nd_range<3>(global_range, local_range), \
+                                [local_mem, \
+                                 preprocessor_data = coder->preprocessor.data, \
+                                 d_data_raw = coder->d_data_raw, \
+                                 width_padding = coder->param_image.width_padding, \
+                                 image_width, image_height](sycl::nd_item<3> item) { \
+                    gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, PIXEL_FORMAT, P1, P2, P3, P4, P5, P6, P7, P8>( \
+                        item, local_mem, preprocessor_data, d_data_raw, width_padding, \
+                        image_width, image_height); \
+                }); \
+            }); \
+            GPUJPEG_SYCL_KERNEL_WAIT_AND_PROFILE(_sycl_e, _start_time, "gpujpeg_preprocessor_comp_to_raw_kernel"); \
+        } \        
+        return 0;
+#else
 #define LAUNCH_KERNEL(PIXEL_FORMAT, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
         GPU_KERNEL_LAUNCH((gpujpeg_preprocessor_comp_to_raw_kernel<color_space_internal, COLOR, PIXEL_FORMAT, P1, P2, P3, P4, P5, P6, P7, P8>), \
             grid, threads, 0, stream, \
@@ -267,6 +294,7 @@ gpujpeg_preprocessor_launch_decode_kernel(struct gpujpeg_coder* coder, dim3 grid
         ); \
         gpujpeg_cuda_check_error("Preprocessor encoding failed", return -1); \
         return 0;
+#endif
 
 #define LAUNCH_KERNEL_SWITCH(PIXEL_FORMAT, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
     switch ( PIXEL_FORMAT ) { \

@@ -145,7 +145,7 @@ static const struct {
 struct gpujpeg_devices_info
 gpujpeg_get_devices_info(void)
 {
-    struct gpujpeg_devices_info devices_info = { 0 };
+    struct gpujpeg_devices_info devices_info = {};
 
     gpuGetDeviceCount(&devices_info.device_count);
     gpujpeg_cuda_check_error("Cannot get number of CUDA devices", return devices_info);
@@ -1614,7 +1614,7 @@ gpujpeg_subsampling_from_name(const char* subsampling) {
     if (a == 0 && b == 0 && alpha == 0) {
         return GPUJPEG_SUBSAMPLING_400;
     }
-    struct gpujpeg_component_sampling_factor factor[GPUJPEG_MAX_COMPONENT_COUNT] = {0};
+    struct gpujpeg_component_sampling_factor factor[GPUJPEG_MAX_COMPONENT_COUNT] = {};
     factor[0].horizontal = 4 / a;
     factor[0].vertical = a == b ? 1 : 2;
     factor[1].horizontal = factor[2].horizontal = 1;

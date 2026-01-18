@@ -265,7 +265,7 @@ y4m_probe_delegate(const char* filename, enum gpujpeg_image_file_format format,
         return 0;
     }
 
-    struct y4m_metadata info = { 0 };
+    struct y4m_metadata info = {};
     if (!y4m_read(filename, &info, NULL, NULL)) {
         return -1;
     }
@@ -302,7 +302,7 @@ y4m_probe_delegate(const char* filename, enum gpujpeg_image_file_format format,
 }
 
 static int y4m_load_delegate(const char *filename, size_t *image_size, void **image_data, allocator_t alloc) {
-    struct y4m_metadata info = { 0 };
+    struct y4m_metadata info = {};
     if ((*image_size = y4m_read(filename, &info, (unsigned char **) image_data, alloc)) == 0) {
         return 1;
     }

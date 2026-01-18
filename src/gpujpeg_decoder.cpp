@@ -505,7 +505,7 @@ gpujpeg_decoder_destroy(struct gpujpeg_decoder* decoder)
 
 int
 gpujpeg_decoder_get_image_info(uint8_t *image, size_t image_size, struct gpujpeg_image_parameters *param_image, struct gpujpeg_parameters *param, int *segment_count) {
-    struct gpujpeg_image_info info = { 0 };
+    struct gpujpeg_image_info info = {};
     const unsigned flags = segment_count == NULL ? 0 : GPUJPEG_COUNT_SEG_COUNT_REQ;
     const int verbose = param->verbose;
     const int rc = gpujpeg_reader_get_image_info(image, image_size, &info, verbose, flags);
