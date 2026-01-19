@@ -24,7 +24,7 @@ set INCLUDE_DIRS=-I%PROJECT_ROOT% -I%PROJECT_ROOT%\libgpujpeg -I%PROJECT_ROOT%\s
 REM Compiler flags
 set SYCL_FLAGS=-fsycl
 set CXX_FLAGS=-std=c++17 -O2 -Wall
-set DEFINES=-DGPUJPEG_USE_SYCL -DGPUJPEG_INTERNAL_BUILD -DTEST_MAIN
+set DEFINES=-DGPUJPEG_USE_SYCL -DTEST_MAIN
 
 REM Build with icpx (Intel oneAPI DPC++/SYCL compiler)
 echo Compiler: icpx

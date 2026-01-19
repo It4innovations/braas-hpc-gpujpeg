@@ -101,7 +101,6 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/libgpujpeg/gpujpeg_version.h.cmakein
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/libgpujpeg.pc.cmakein
                ${CMAKE_CURRENT_BINARY_DIR}/libgpujpeg.pc @ONLY)
 add_definitions("-DHAVE_GPUJPEG_VERSION_H")
-add_definitions("-DGPUJPEG_INTERNAL_BUILD")
 
 # Include cmake modules in "cmake" directory (FindGLFW.cmake)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")

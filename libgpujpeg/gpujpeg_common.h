@@ -51,20 +51,8 @@
  * 
  * The actual type is defined in the internal build.
  */
-#ifdef GPUJPEG_INTERNAL_BUILD
-    // For internal builds, include the device compatibility layer which defines gpuStream_t
-    #include "../src/gpujpeg_device_compat.h"
-#else
-    // For external API users, use opaque pointer compatible with all backends
-    struct gpuStreamOpaque;
-    typedef struct gpuStreamOpaque* gpuStream_t;
-    
-    // Also provide cudaStream_t for encoder API compatibility
-    #ifndef __DRIVER_TYPES_H__
-    struct CUstream_st;
-    typedef struct CUstream_st *cudaStream_t;
-    #endif
-#endif
+
+#include "../src/gpujpeg_device_compat.h"
 
 #if __cplusplus >= 201402L || __STDC_VERSION__ >= 202311L
 #define GPUJPEG_DEPRECATED [[deprecated]]

@@ -21,7 +21,7 @@ INCLUDE_DIRS="-I$PROJECT_ROOT -I$PROJECT_ROOT/libgpujpeg -I$PROJECT_ROOT/src"
 # Compiler flags
 SYCL_FLAGS="-fsycl"
 CXX_FLAGS="-std=c++17 -O2 -Wall"
-DEFINES="-DGPUJPEG_USE_SYCL -DGPUJPEG_INTERNAL_BUILD -DTEST_MAIN"
+DEFINES="-DGPUJPEG_USE_SYCL -DTEST_MAIN"
 
 # Build with icpx (Intel oneAPI DPC++/SYCL compiler)
 echo "Compiler: icpx"
