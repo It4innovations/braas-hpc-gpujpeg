@@ -34,8 +34,42 @@ if(GPUJPEG_USE_HIP)
         enable_language(HIP)
         message(STATUS "Using enable_language(HIP) for HIP support")
     else()
-        message(STATUS "Using find_package(HIP) for HIP support")
+        message(STATUS "Using find_package(HIP) for HIP support (direct clang++)")
         find_package(HIP REQUIRED)
+        
+        # When not using HIP language, we compile with clang++ directly
+        # Find ROCm installation
+        if(NOT DEFINED ROCM_PATH AND DEFINED ENV{ROCM_PATH})
+            set(ROCM_PATH $ENV{ROCM_PATH})
+        endif()
+        if(NOT DEFINED ROCM_PATH)
+            if(WIN32)
+                # Try common ROCm installation paths on Windows
+                if(EXISTS "C:/AMD/ROCm/5.7")
+                    set(ROCM_PATH "C:/AMD/ROCm/5.7")
+                elseif(EXISTS "C:/Program Files/AMD/ROCm/5.7")
+                    set(ROCM_PATH "C:/Program Files/AMD/ROCm/5.7")
+                endif()
+            else()
+                # Try common ROCm installation paths on Linux
+                if(EXISTS "/opt/rocm")
+                    set(ROCM_PATH "/opt/rocm")
+                elseif(EXISTS "/opt/rocm-6.0.2")
+                    set(ROCM_PATH "/opt/rocm-6.0.2")
+                endif()
+            endif()
+        endif()
+        
+        if(ROCM_PATH)
+            message(STATUS "ROCm path: ${ROCM_PATH}")
+            # Set the compiler to ROCm's clang++ if not already set
+            if(NOT CMAKE_CXX_COMPILER_FORCED)
+                set(CMAKE_CXX_COMPILER "${ROCM_PATH}/bin/clang++" CACHE FILEPATH "CXX compiler" FORCE)
+                message(STATUS "Using ROCm clang++: ${CMAKE_CXX_COMPILER}")
+            endif()
+        else()
+            message(FATAL_ERROR "Could not find ROCm installation. Please set ROCM_PATH environment variable.")
+        endif()
     endif()
     
 elseif(GPUJPEG_USE_SYCL)
@@ -201,6 +235,23 @@ elseif(GPU_BACKEND STREQUAL "HIP")
     )
     
     # HIP-specific compiler flags
+    if(NOT ENABLE_LANGUAGE_HIP)
+        # When using clang++ directly (not HIP language), add HIP compilation flags
+        set(HIP_COMPILE_FLAGS "-x hip")
+        
+        # Set GPU architecture - default to gfx900, can be overridden
+        if(NOT DEFINED HIP_ARCHITECTURES)
+            set(HIP_ARCHITECTURES "gfx900" CACHE STRING "HIP GPU architectures")
+        endif()
+        
+        foreach(arch ${HIP_ARCHITECTURES})
+            set(HIP_COMPILE_FLAGS "${HIP_COMPILE_FLAGS} --offload-arch=${arch}")
+        endforeach()
+        
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${HIP_COMPILE_FLAGS}")
+        message(STATUS "HIP compile flags: ${HIP_COMPILE_FLAGS}")
+    endif()
+    
     if(NOT WIN32)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
     endif()
@@ -225,9 +276,14 @@ endif()
 add_library(gpujpeg ${H_FILES} ${GPUJPEG_COMMON_SOURCES} ${GPUJPEG_GPU_SOURCES})
 
 # Set language for GPU source files
-if(GPU_BACKEND STREQUAL "HIP" AND ENABLE_LANGUAGE_HIP)
-    # Mark GPU sources as HIP language so they're compiled with hipcc
-    set_source_files_properties(${GPUJPEG_GPU_SOURCES} PROPERTIES LANGUAGE HIP)
+if(GPU_BACKEND STREQUAL "HIP")
+    if(ENABLE_LANGUAGE_HIP)
+        # Mark GPU sources as HIP language so they're compiled with hipcc
+        set_source_files_properties(${GPUJPEG_GPU_SOURCES} PROPERTIES LANGUAGE HIP)
+    else()
+        # When using clang++ directly, ensure GPU sources are compiled as C++
+        set_source_files_properties(${GPUJPEG_GPU_SOURCES} PROPERTIES LANGUAGE CXX)
+    endif()
 endif()
 
 # Add compile definitions for GPU backend to all source files
@@ -254,16 +310,25 @@ elseif(GPU_BACKEND STREQUAL "HIP")
         set(ROCM_PATH $ENV{ROCM_PATH})
     endif()
     if(NOT DEFINED ROCM_PATH)
-        # Try common ROCm installation paths
-        if(EXISTS "/opt/rocm")
-            set(ROCM_PATH "/opt/rocm")
-        elseif(EXISTS "/opt/rocm-6.0.2")
-            set(ROCM_PATH "/opt/rocm-6.0.2")
+        if(WIN32)
+            # Try common ROCm installation paths on Windows
+            if(EXISTS "C:/AMD/ROCm/5.7")
+                set(ROCM_PATH "C:/AMD/ROCm/5.7")
+            elseif(EXISTS "C:/Program Files/AMD/ROCm/5.7")
+                set(ROCM_PATH "C:/Program Files/AMD/ROCm/5.7")
+            endif()
+        else()
+            # Try common ROCm installation paths on Linux
+            if(EXISTS "/opt/rocm")
+                set(ROCM_PATH "/opt/rocm")
+            elseif(EXISTS "/opt/rocm-6.0.2")
+                set(ROCM_PATH "/opt/rocm-6.0.2")
+            endif()
         endif()
     endif()
     
     if(ROCM_PATH)
-        message(STATUS "Using ROCm path: ${ROCM_PATH}")
+        message(STATUS "Using ROCm path for includes: ${ROCM_PATH}")
         target_include_directories(${PROJECT_NAME}
             PRIVATE 
                 ${ROCM_PATH}/include
@@ -289,8 +354,27 @@ if(GPU_BACKEND STREQUAL "CUDA")
 elseif(GPU_BACKEND STREQUAL "HIP")
     # HIP libraries are automatically linked when using HIP language
     # If using find_package(HIP), link HIP runtime explicitly
-    if(NOT ENABLE_LANGUAGE_HIP AND HIP_FOUND)
-        target_link_libraries(${PROJECT_NAME} hip::amdhip64)
+    if(NOT ENABLE_LANGUAGE_HIP)
+        if(HIP_FOUND AND TARGET hip::amdhip64)
+            target_link_libraries(${PROJECT_NAME} hip::amdhip64)
+        else()
+            # Link directly to amdhip64 library
+            if(ROCM_PATH)
+                find_library(AMDHIP64_LIBRARY
+                    NAMES amdhip64
+                    PATHS ${ROCM_PATH}/lib
+                    NO_DEFAULT_PATH
+                )
+                if(AMDHIP64_LIBRARY)
+                    target_link_libraries(${PROJECT_NAME} ${AMDHIP64_LIBRARY})
+                    message(STATUS "Linked amdhip64 library: ${AMDHIP64_LIBRARY}")
+                else()
+                    message(FATAL_ERROR "Could not find amdhip64 library in ${ROCM_PATH}/lib")
+                endif()
+            else()
+                message(FATAL_ERROR "ROCM_PATH not set, cannot find amdhip64 library")
+            endif()
+        endif()
     endif()
     if(UNIX)
         target_link_libraries(${PROJECT_NAME} m)
@@ -358,9 +442,16 @@ if(GPU_BACKEND STREQUAL "CUDA")
     message(STATUS "  CUDA Compiler: ${CMAKE_CUDA_COMPILER}")
     message(STATUS "  CUDA Architectures: ${CMAKE_CUDA_ARCHITECTURES}")
 elseif(GPU_BACKEND STREQUAL "HIP")
-    message(STATUS "  HIP Compiler: ${CMAKE_HIP_COMPILER}")
-    if(CMAKE_HIP_ARCHITECTURES)
-        message(STATUS "  HIP Architectures: ${CMAKE_HIP_ARCHITECTURES}")
+    if(ENABLE_LANGUAGE_HIP)
+        message(STATUS "  HIP Compiler: ${CMAKE_HIP_COMPILER}")
+        if(CMAKE_HIP_ARCHITECTURES)
+            message(STATUS "  HIP Architectures: ${CMAKE_HIP_ARCHITECTURES}")
+        endif()
+    else()
+        message(STATUS "  CXX Compiler (for HIP): ${CMAKE_CXX_COMPILER}")
+        if(HIP_ARCHITECTURES)
+            message(STATUS "  HIP Architectures: ${HIP_ARCHITECTURES}")
+        endif()
     endif()
 elseif(GPU_BACKEND STREQUAL "SYCL")
     message(STATUS "  SYCL Compiler: ${CMAKE_CXX_COMPILER}")
