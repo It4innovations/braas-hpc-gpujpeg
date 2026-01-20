@@ -8,6 +8,7 @@ src/*.lo
 *.rgb
 *.vim
 /build*
+build_hipcc
 configure
 Makefile
 Makefile.in
