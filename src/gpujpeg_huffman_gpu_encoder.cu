@@ -1069,7 +1069,7 @@ gpujpeg_huffman_gpu_encoder_create(const struct gpujpeg_encoder * encoder)
         }
         sycl::range<3> global_range(1, 32, 256);
         sycl::range<3> local_range(1, 1, 256);
-        auto _start_time = std::chrono::high_resolution_clock::now();
+        GPUJPEG_SYCL_TIMER_START(_start_time);
         sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
             sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh);
             cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
@@ -1213,7 +1213,7 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
         }
         sycl::range<3> global_range(grid.z * thread.z, grid.y * thread.y, grid.x * thread.x);
         sycl::range<3> local_range(thread.z, thread.y, thread.x);
-        auto _start_time = std::chrono::high_resolution_clock::now();
+        GPUJPEG_SYCL_TIMER_START(_start_time);
         sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
             sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size_encode), cgh);
             auto d_component = coder->d_component;
@@ -1272,7 +1272,7 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
             }
             sycl::range<3> global_range(grid.z * thread.z, grid.y * thread.y, grid.x * thread.x);
             sycl::range<3> local_range(thread.z, thread.y, thread.x);
-            auto _start_time = std::chrono::high_resolution_clock::now();
+            GPUJPEG_SYCL_TIMER_START(_start_time);
             sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
                 sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size_warp), cgh);
                 cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
@@ -1320,7 +1320,7 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
             }
             sycl::range<3> global_range(grid.z * thread.z, grid.y * thread.y, grid.x * thread.x);
             sycl::range<3> local_range(thread.z, thread.y, thread.x);
-            auto _start_time = std::chrono::high_resolution_clock::now();
+            GPUJPEG_SYCL_TIMER_START(_start_time);
             sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
                 sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size_warp), cgh);
                 cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
@@ -1372,7 +1372,7 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
         }
         sycl::range<3> global_range(1, 1, num_serialization_tblocks * SERIALIZATION_THREADS_PER_TBLOCK);
         sycl::range<3> local_range(1, 1, SERIALIZATION_THREADS_PER_TBLOCK);
-        auto _start_time = std::chrono::high_resolution_clock::now();
+        GPUJPEG_SYCL_TIMER_START(_start_time);
         sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
             sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size_serialization), cgh);
             cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
@@ -1411,7 +1411,7 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
         }
         sycl::range<3> global_range(1, 1, 512);
         sycl::range<3> local_range(1, 1, 512);
-        auto _start_time = std::chrono::high_resolution_clock::now();
+        GPUJPEG_SYCL_TIMER_START(_start_time);
         sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
             sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size_allocation), cgh);
             //sycl::local_accessor<unsigned int, 1> local_mem(sycl::range<1>(512), cgh);
@@ -1453,7 +1453,7 @@ gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujp
                                compaction_thread.y, 
                                compaction_thread.x);
 
-    auto _start_time = std::chrono::high_resolution_clock::now();
+    GPUJPEG_SYCL_TIMER_START(_start_time);
     sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
         sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size_compaction), cgh);
         

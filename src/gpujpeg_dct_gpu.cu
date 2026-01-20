@@ -701,7 +701,7 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder)
         }
         sycl::range<3> global_range(dct_grid.z * dct_block.z, dct_grid.y * dct_block.y, dct_grid.x * dct_block.x);
         sycl::range<3> local_range(dct_block.z, dct_block.y, dct_block.x);
-        auto _start_time = std::chrono::high_resolution_clock::now();
+        GPUJPEG_SYCL_TIMER_START(_start_time);
         sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
             sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size), cgh);
             cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
@@ -788,7 +788,7 @@ gpujpeg_idct_gpu(struct gpujpeg_decoder* decoder)
         }
         sycl::range<3> global_range(dct_grid.z * dct_block.z, dct_grid.y * dct_block.y, dct_grid.x * dct_block.x);
         sycl::range<3> local_range(dct_block.z, dct_block.y, dct_block.x);
-        auto _start_time = std::chrono::high_resolution_clock::now();
+        GPUJPEG_SYCL_TIMER_START(_start_time);
         sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
             sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size_idct), cgh);
             cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),

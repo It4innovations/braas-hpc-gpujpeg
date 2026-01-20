@@ -275,7 +275,7 @@ gpujpeg_preprocessor_launch_encode_kernel(struct gpujpeg_coder* coder, dim3 grid
             } \
             sycl::range<3> global_range(grid.z * threads.z, grid.y * threads.y, grid.x * threads.x); \
             sycl::range<3> local_range(threads.z, threads.y, threads.x); \
-            auto _start_time = std::chrono::high_resolution_clock::now(); \
+            GPUJPEG_SYCL_TIMER_START(_start_time); \
             sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) { \
                 sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh); \
                 cgh.parallel_for(sycl::nd_range<3>(global_range, local_range), \
@@ -594,7 +594,7 @@ gpujpeg_preprocessor_flip_lines(struct gpujpeg_coder* coder)
         }
         sycl::range<3> global_range(grid.z * block.z, grid.y * block.y, grid.x * block.x);
         sycl::range<3> local_range(block.z, block.y, block.x);
-        auto _start_time = std::chrono::high_resolution_clock::now();
+        GPUJPEG_SYCL_TIMER_START(_start_time);
         sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
             sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh);
             cgh.parallel_for(sycl::nd_range<3>(global_range, local_range), \
@@ -675,7 +675,7 @@ gpujpeg_preprocessor_channel_remap(struct gpujpeg_coder* coder)
     sycl::range<3> global_range(grid.z * block.z, grid.y * block.y, grid.x * block.x);
     sycl::range<3> local_range(block.z, block.y, block.x);
 
-    auto _start_time = std::chrono::high_resolution_clock::now();
+    GPUJPEG_SYCL_TIMER_START(_start_time);
     sycl::event _sycl_e;
     
     switch ( coder->param_image.pixel_format ) {

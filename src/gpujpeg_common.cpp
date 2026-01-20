@@ -102,7 +102,8 @@ mbs_to_wstr_helper(const char* mbstr, wchar_t* wstr_buf, size_t wstr_len)
 {
     const int size_needed = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, mbstr, -1, NULL, 0);
     if ( size_needed == 0 ) {
-        ERROR_MSG("MultiByteToWideChar error: %d (0x%x)!\n", GetLastError(), GetLastError());
+        //ERROR_MSG("MultiByteToWideChar error: %d (0x%x)!\n", GetLastError(), GetLastError());
+        ERROR_MSG("MultiByteToWideChar error!\n");
         return NULL;
     }
     if (size_needed > (int) wstr_len) {
@@ -148,10 +149,10 @@ gpujpeg_get_devices_info(void)
     struct gpujpeg_devices_info devices_info = {};
 
     gpuGetDeviceCount(&devices_info.device_count);
-    gpujpeg_cuda_check_error("Cannot get number of CUDA devices", return devices_info);
+    gpujpeg_cuda_check_error("Cannot get number of GPU devices", return devices_info);
 
     if ( devices_info.device_count > GPUJPEG_MAX_DEVICE_COUNT ) {
-        fprintf(stderr, "[GPUJPEG] [Warning] There are available more CUDA devices (%d) than maximum count (%d).\n",
+        fprintf(stderr, "[GPUJPEG] [Warning] There are available more GPU devices (%d) than maximum count (%d).\n",
             devices_info.device_count, GPUJPEG_MAX_DEVICE_COUNT);
         fprintf(stderr, "[GPUJPEG] [Warning] Using maximum count (%d).\n", GPUJPEG_MAX_DEVICE_COUNT);
         devices_info.device_count = GPUJPEG_MAX_DEVICE_COUNT;
@@ -185,12 +186,12 @@ gpujpeg_print_devices_info(void)
 {
     struct gpujpeg_devices_info devices_info = gpujpeg_get_devices_info();
     if ( devices_info.device_count == 0 ) {
-        PRINTF("There is no device supporting CUDA.\n");
+        PRINTF("There is no device supporting GPU.\n");
         return -1;
     } else if ( devices_info.device_count == 1 ) {
-        PRINTF("There is 1 device supporting CUDA:\n");
+        PRINTF("There is 1 device supporting GPU:\n");
     } else {
-        PRINTF("There are %d devices supporting CUDA:\n", devices_info.device_count);
+        PRINTF("There are %d devices supporting GPU:\n", devices_info.device_count);
     }
 
     for ( int device_id = 0; device_id < devices_info.device_count; device_id++ ) {
@@ -212,9 +213,9 @@ gpujpeg_init_device(int device_id, int flags)
 {
     int dev_count;
     gpuGetDeviceCount(&dev_count);
-    gpujpeg_cuda_check_error("Cannot get number of CUDA devices", return -1);
+    gpujpeg_cuda_check_error("Cannot get number of GPU devices", return -1);
     if ( dev_count == 0 ) {
-        fprintf(stderr, "[GPUJPEG] [Error] No CUDA enabled device\n");
+        fprintf(stderr, "[GPUJPEG] [Error] No GPU enabled device\n");
         return -1;
     }
 
@@ -227,31 +228,31 @@ gpujpeg_init_device(int device_id, int flags)
     struct gpuDeviceProp devProp;
     if ( gpuSuccess != gpuGetDeviceProperties(&devProp, device_id) ) {
         fprintf(stderr,
-            "[GPUJPEG] [Error] Can't get CUDA device properties!\n"
-            "[GPUJPEG] [Error] Do you have proper driver for CUDA installed?\n"
+            "[GPUJPEG] [Error] Can't get GPU device properties!\n"
+            "[GPUJPEG] [Error] Do you have proper driver for GPU installed?\n"
         );
         return -1;
     }
 
     if ( devProp.major < 1 ) {
-        fprintf(stderr, "[GPUJPEG] [Error] Device %d does not support CUDA\n", device_id);
+        fprintf(stderr, "[GPUJPEG] [Error] Device %d does not support GPU\n", device_id);
         return -1;
     }
 
     if ( flags & GPUJPEG_INIT_DEV_VERBOSE ) {
         int cuda_driver_version = 0;
         gpuDriverGetVersion(&cuda_driver_version);
-        PRINTF("CUDA driver version:   %d.%d\n", cuda_driver_version / 1000, (cuda_driver_version % 100) / 10);
+        PRINTF("GPU driver version:   %d.%d\n", cuda_driver_version / 1000, (cuda_driver_version % 100) / 10);
 
         int cuda_runtime_version = 0;
         gpuRuntimeGetVersion(&cuda_runtime_version);
-        PRINTF("CUDA runtime version:  %d.%d\n", cuda_runtime_version / 1000, (cuda_runtime_version % 100) / 10);
+        PRINTF("GPU runtime version:  %d.%d\n", cuda_runtime_version / 1000, (cuda_runtime_version % 100) / 10);
 
         PRINTF("Using Device #%d:       %s (c.c. %d.%d)\n", device_id, devProp.name, devProp.major, devProp.minor);
     }
 
     gpuSetDevice(device_id);
-    gpujpeg_cuda_check_error("Set CUDA device", return -1);
+    gpujpeg_cuda_check_error("Set GPU device", return -1);
 
     // Test by simple copying that the device is ready
     uint8_t data[] = {8};
@@ -261,7 +262,7 @@ gpujpeg_init_device(int device_id, int flags)
     gpuFree(d_data);
     gpuError_t error = gpuGetLastError();
     if ( gpuSuccess != error ) {
-        fprintf(stderr, "[GPUJPEG] [Error] Failed to initialize CUDA device: %s\n", gpuGetErrorString(error));
+        fprintf(stderr, "[GPUJPEG] [Error] Failed to initialize GPU device: %s\n", gpuGetErrorString(error));
         return -1;
     }
 
@@ -1233,7 +1234,7 @@ gpujpeg_image_load_from_file(const char* filename, uint8_t** image, size_t* imag
 
     uint8_t* data = NULL;
     gpuMallocHost((void**)&data, *image_size * sizeof(uint8_t));
-    gpujpeg_cuda_check_error("Initialize CUDA host buffer", return -1);
+    gpujpeg_cuda_check_error("Initialize GPU host buffer", return -1);
     if ( *image_size != fread(data, sizeof(uint8_t), *image_size, file) ) {
         fprintf(stderr, "[GPUJPEG] [Error] Failed to load image data [%zd bytes] from file %s!\n", *image_size, filename);
         return -1;

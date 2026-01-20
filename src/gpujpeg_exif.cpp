@@ -542,7 +542,11 @@ gpujpeg_exif_add_tag(struct gpujpeg_exif_tags** exif_tags, const char* cfg)
     void* val_alloc = NULL;
     size_t val_count = 0;
     if ( (exif_tag_type_info[type].type_flags & T_BYTE_ARRAY) != 0 ) {
+#ifdef _WIN32
+        char* val_str = _strdup(endptr);
+#else
         char* val_str = strdup(endptr);
+#endif
         val_alloc = val_str;
         val_count = strlen(val_str);
         endptr += val_count;

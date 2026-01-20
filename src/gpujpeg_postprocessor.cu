@@ -265,7 +265,7 @@ gpujpeg_preprocessor_launch_decode_kernel(struct gpujpeg_coder* coder, dim3 grid
             } \
             sycl::range<3> global_range(grid.z * threads.z, grid.y * threads.y, grid.x * threads.x); \
             sycl::range<3> local_range(threads.z, threads.y, threads.x); \
-            auto _start_time = std::chrono::high_resolution_clock::now(); \
+            GPUJPEG_SYCL_TIMER_START(_start_time); \
             sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) { \
                 sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh); \
                 cgh.parallel_for(sycl::nd_range<3>(global_range, local_range), \
@@ -280,7 +280,7 @@ gpujpeg_preprocessor_launch_decode_kernel(struct gpujpeg_coder* coder, dim3 grid
                 }); \
             }); \
             GPUJPEG_SYCL_KERNEL_WAIT_AND_PROFILE(_sycl_e, _start_time, "gpujpeg_preprocessor_comp_to_raw_kernel"); \
-        } \        
+        } \
         return 0;
 #else
 #define LAUNCH_KERNEL(PIXEL_FORMAT, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \

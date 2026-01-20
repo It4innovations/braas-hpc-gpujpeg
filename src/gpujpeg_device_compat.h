@@ -14,7 +14,7 @@
 #include <stddef.h>  // for size_t
 
 // (Un)comment to enable kernel launch logging
-#define GPUJPEG_DEBUG_KERNEL_LAUNCH
+//#define GPUJPEG_DEBUG_KERNEL_LAUNCH
 
 // Determine which GPU backend to use
 // Check CMake-defined macros first, then fall back to compiler detection
@@ -764,9 +764,10 @@ inline dim3 to_dim3(int v) { return dim3(v, 1, 1); }
     #define GPUJPEG_DEBUG_PRINT_DEVICE_DATA(ptr, type, count) /* disabled */
 #endif
 
-// SYCL kernel timing macro (only for SYCL backend)
+// SYCL kernel timing macros (only for SYCL backend)
 #ifdef GPUJPEG_USE_SYCL
     #ifdef GPUJPEG_DEBUG_KERNEL_LAUNCH
+        #define GPUJPEG_SYCL_TIMER_START(start_time) auto start_time = std::chrono::high_resolution_clock::now()
         #define GPUJPEG_SYCL_KERNEL_WAIT_AND_PROFILE(sycl_event, start_time, kernel_name) \
             do { \
                 (sycl_event).wait(); \
@@ -775,6 +776,7 @@ inline dim3 to_dim3(int v) { return dim3(v, 1, 1); }
                 fprintf(stderr, "[SYCL] Kernel %s took %.3f ms\n", kernel_name, _elapsed_us / 1000.0); \
             } while(0)
     #else
+        #define GPUJPEG_SYCL_TIMER_START(start_time) /* disabled */
         #define GPUJPEG_SYCL_KERNEL_WAIT_AND_PROFILE(sycl_event, start_time, kernel_name) /* disabled */
     #endif
 #endif
