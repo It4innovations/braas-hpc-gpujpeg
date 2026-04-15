@@ -1,6 +1,6 @@
 /**
  * @file
- * Copyright (c) 2011-2019, CESNET z.s.p.o
+ * Copyright (c) 2011-2023, CESNET z.s.p.o
  * Copyright (c) 2011, Silicon Genome, LLC.
  *
  * All rights reserved.
@@ -36,19 +36,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#include <cuda_runtime.h>
+#include "gpujpeg_device_compat.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#define GPUJPEG_CLAMP(x, low, high)  (((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
     
-// CUDA check error
+// GPU check error
 #define gpujpeg_cuda_check_error(msg, action) \
     { \
-        cudaError_t err = cudaGetLastError(); \
-        if( cudaSuccess != err) { \
+        gpuError_t err = gpuGetLastError(); \
+        if( gpuSuccess != err) { \
             fprintf(stderr, "[GPUJPEG] [Error] %s (line %i): %s: %s.\n", \
-                __FILE__, __LINE__, msg, cudaGetErrorString( err) ); \
+                __FILE__, __LINE__, msg, gpujpeg_get_error_string( err) ); \
             action; \
         } \
     } \
@@ -79,8 +77,16 @@ struct { int x; int y; int z; } gridDim;
     fprintf(stderr, "[GPUJPEG] [Error] Can't use OpenGL. The codec was compiled without OpenGL!\n"); \
     action; \
 
-#ifdef __cplusplus
-}
-#endif
+#define ARR_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
+
+/**
+ * formats num with thousands delimitered by a comma (,)
+ * @param buf    output buffer, must not be NULL or zero bytes long
+ * @param buflen buffer len, should be long enough to hold the result
+ * @returns pointer to buf (not necessarily the beginning) containng the represented number of "ERR"
+ *          if not enough space
+ */
+char*
+format_number_with_delim(size_t num, char* buf, size_t buflen);
 
 #endif // GPUJPEG_UTIL_H

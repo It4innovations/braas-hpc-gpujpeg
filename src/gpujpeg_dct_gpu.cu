@@ -1,6 +1,6 @@
 /**
  * @file
- * Copyright (c) 2011-2020, CESNET z.s.p.o
+ * Copyright (c) 2011-2025, CESNET
  * Copyright (c) 2011, Silicon Genome, LLC.
  *
  * All rights reserved.
@@ -30,6 +30,7 @@
 
 #include "gpujpeg_dct_gpu.h"
 #include "gpujpeg_util.h"
+#include "gpujpeg_device_compat.h"
 
 /*
  * Copyright 1993-2010 NVIDIA Corporation.  All rights reserved.
@@ -86,7 +87,7 @@
  */
 union PackedInteger
 {
-    struct __align__(8)
+    struct alignas(8)
     {
         int16_t hShort1;
         int16_t hShort2;
@@ -97,7 +98,7 @@ union PackedInteger
 /**
  * Converts fixed point value to short value
  */
-__device__ inline int16_t
+GPU_DEVICE inline int16_t
 unfixh(int x)
 {
     return (int16_t)((x + 0x8000) >> 16);
@@ -106,7 +107,7 @@ unfixh(int x)
 /**
  * Converts fixed point value to short value
  */
-__device__ inline int
+GPU_DEVICE inline int
 unfixo(int x)
 {
     return (x + 0x1000) >> 13;
@@ -119,7 +120,7 @@ unfixo(int x)
  * but optimized for CUDA (cheap floating point MAD instructions).
  */
 template <typename T>
-__device__ static inline void
+GPU_DEVICE static inline void
 gpujpeg_dct_gpu(const T in0, const T in1, const T in2, const T in3, const T in4, const T in5, const T in6, const T in7,
                 T & out0, T & out1, T & out2, T & out3, T & out4, T & out5, T & out6, T & out7,
                 const float level_shift_8 = 0.0f)
@@ -161,7 +162,7 @@ gpujpeg_dct_gpu(const T in0, const T in1, const T in2, const T in3, const T in4,
 }
 
 /** Constant memory copy of transposed quantization table pre-divided with DCT output weights. */
-__constant__ float gpujpeg_dct_gpu_quantization_table_const[64];
+float* gpujpeg_dct_gpu_quantization_table_const = NULL;
 
 /**
  * Performs 8x8 block-wise Forward Discrete Cosine Transform of the given
@@ -178,17 +179,17 @@ __constant__ float gpujpeg_dct_gpu_quantization_table_const[64];
  * @return None
  */
 template <int WARP_COUNT>
-__global__ void
-gpujpeg_dct_gpu_kernel(int block_count_x, int block_count_y, uint8_t* source, const unsigned int source_stride,
+GPU_GLOBAL void
+gpujpeg_dct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA int block_count_x, int block_count_y, uint8_t* source, const unsigned int source_stride,
                        int16_t* output, int output_stride, const float * const quant_table)
 {
     // each warp processes 4 8x8 blocks (horizontally neighboring)
-    const int block_idx_x = threadIdx.x >> 3;
-    const int block_idx_y = threadIdx.y;
+    const int block_idx_x = GPU_THREAD_IDX_X >> 3;
+    const int block_idx_y = GPU_THREAD_IDX_Y;
 
     // offset of threadblocks's blocks in the image (along both axes)
-    const int block_offset_x = blockIdx.x * 4;
-    const int block_offset_y = blockIdx.y * WARP_COUNT;
+    const int block_offset_x = GPU_BLOCK_IDX_X * 4;
+    const int block_offset_y = GPU_BLOCK_IDX_Y * WARP_COUNT;
 
     // stop if thread's block is out of image
     const bool processing = block_offset_x + block_idx_x < block_count_x
@@ -198,7 +199,7 @@ gpujpeg_dct_gpu_kernel(int block_count_x, int block_count_y, uint8_t* source, co
     }
 
     // index of row/column processed by this thread within its 8x8 block
-    const int dct_idx = threadIdx.x & 7;
+    const int dct_idx = GPU_THREAD_IDX_X & 7;
 
     // data type of transformed coefficients
     typedef float dct_t;
@@ -216,7 +217,11 @@ gpujpeg_dct_gpu_kernel(int block_count_x, int block_count_y, uint8_t* source, co
     };
 
     // buffer for transpositions of all blocks
-    __shared__ dct_t s_transposition_all[SHARED_SIZE_TOTAL];
+#ifdef GPUJPEG_USE_SYCL
+    GPU_SHARED_PTR(dct_t, s_transposition_all, 0);
+#else
+    GPU_SHARED dct_t s_transposition_all[SHARED_SIZE_TOTAL];
+#endif
 
     // pointer to begin of transposition buffer for thread's block
     dct_t * const s_transposition = s_transposition_all + block_idx_y * SHARED_SIZE_WARP + block_idx_x * 8;
@@ -260,6 +265,7 @@ gpujpeg_dct_gpu_kernel(int block_count_x, int block_count_y, uint8_t* source, co
                     -1024.0f  // = 8 * -128 ... level shift sum for all 8 coefficients
     );
 
+
     // read coefficients back - each thread reads one row (no need to sync - only threads within same warp work on each block)
     // ... and transform the row horizontally
     volatile dct_t * s_src = s_transposition + SHARED_STRIDE * dct_idx;
@@ -268,24 +274,24 @@ gpujpeg_dct_gpu_kernel(int block_count_x, int block_count_y, uint8_t* source, co
                     dct0, dct1, dct2, dct3, dct4, dct5, dct6, dct7);
 
     // apply quantization to the row of coefficients (quantization table is actually transposed in global memory for coalesced memory acceses)
-    #if __CUDA_ARCH__ < 200
+    #if defined(GPUJPEG_USE_CUDA) && defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 200
     const float * const quantization_row = gpujpeg_dct_gpu_quantization_table_const + dct_idx; // Quantization table in constant memory for CCs < 2.0
     #else
-    const float * const quantization_row = quant_table + dct_idx; // Cached global memory reads for CCs >= 2.0
+    const float * const quantization_row = quant_table + dct_idx; // Cached global memory reads for CCs >= 2.0 or SYCL
     #endif
-    const int out0 = rintf(dct0 * quantization_row[0 * 8]);
-    const int out1 = rintf(dct1 * quantization_row[1 * 8]);
-    const int out2 = rintf(dct2 * quantization_row[2 * 8]);
-    const int out3 = rintf(dct3 * quantization_row[3 * 8]);
-    const int out4 = rintf(dct4 * quantization_row[4 * 8]);
-    const int out5 = rintf(dct5 * quantization_row[5 * 8]);
-    const int out6 = rintf(dct6 * quantization_row[6 * 8]);
-    const int out7 = rintf(dct7 * quantization_row[7 * 8]);
+    const int out0 = GPU_RINTF(dct0 * quantization_row[0 * 8]);
+    const int out1 = GPU_RINTF(dct1 * quantization_row[1 * 8]);
+    const int out2 = GPU_RINTF(dct2 * quantization_row[2 * 8]);
+    const int out3 = GPU_RINTF(dct3 * quantization_row[3 * 8]);
+    const int out4 = GPU_RINTF(dct4 * quantization_row[4 * 8]);
+    const int out5 = GPU_RINTF(dct5 * quantization_row[5 * 8]);
+    const int out6 = GPU_RINTF(dct6 * quantization_row[6 * 8]);
+    const int out7 = GPU_RINTF(dct7 * quantization_row[7 * 8]);
 
     // using single write, save output row packed into 16 bytes
     const int out_x = (block_offset_x + block_idx_x) * 64; // 64 coefficients per one transformed and quantized block
     const int out_y = (block_offset_y + block_idx_y) * output_stride;
-    ((uint4*)(output + out_x + out_y))[dct_idx] = make_uint4(
+    ((uint4*)(output + out_x + out_y))[dct_idx] = GPU_MAKE_UINT4(
         (out0 & 0xFFFF) + (out1 << 16),
         (out2 & 0xFFFF) + (out3 << 16),
         (out4 & 0xFFFF) + (out5 << 16),  // ... & 0xFFFF keeps only lower 16 bits - useful for negative numbers, which have 1s in upper bits
@@ -293,9 +299,13 @@ gpujpeg_dct_gpu_kernel(int block_count_x, int block_count_y, uint8_t* source, co
     );
 }
 
+// Explicit template instantiation for SYCL compatibility
+template GPU_GLOBAL void gpujpeg_dct_gpu_kernel<4>(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA int block_count_x, int block_count_y, uint8_t* source, const unsigned int source_stride,
+                       int16_t* output, int output_stride, const float * const quant_table);
+
 /** Quantization table */
 //TODO zmenit na float
-__constant__ uint16_t gpujpeg_idct_gpu_quantization_table[64];
+uint16_t* gpujpeg_idct_gpu_quantization_table = NULL;
 
 #if !GPUJPEG_IDCT_USE_ASM
 
@@ -309,7 +319,7 @@ __constant__ uint16_t gpujpeg_idct_gpu_quantization_table[64];
  * @param V8 [IN/OUT] - Pointer to the first element of vector
  * @return None
  */
-__device__ void
+GPU_DEVICE void
 gpujpeg_idct_gpu_kernel_inplace(float* V8)
 {
 	//costants which are used more than once
@@ -469,8 +479,8 @@ gpujpeg_idct_gpu_kernel_inplace(float* V8)
  * @param quantization_table [IN]  - Quantization table
  * @return None
  */
-__global__ void
-gpujpeg_idct_gpu_kernel(int16_t* source, uint8_t* result, int output_stride, uint16_t* quantization_table)
+GPU_GLOBAL void
+gpujpeg_idct_gpu_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PARAM GPU_ITEM_COMMA int16_t* source, uint8_t* result, int output_stride, uint16_t* quantization_table)
 {
 	//here the grid is assumed to be only in x - it saves a few operations; if a larger
 	//block count is used (e. g. GPUJPEG_IDCT_BLOCK_Z == 1), it would need to be adjusted,
@@ -478,29 +488,35 @@ gpujpeg_idct_gpu_kernel(int16_t* source, uint8_t* result, int output_stride, uin
 	//enough for a 67.1 MPix picture (8K is 33.1 MPix)
 
 	//the first block of picture processed in this thread block
-	unsigned int picBlockNumber = (blockIdx.x) * GPUJPEG_IDCT_BLOCK_Y * GPUJPEG_IDCT_BLOCK_X
+	unsigned int picBlockNumber = (GPU_BLOCK_IDX_X) * GPUJPEG_IDCT_BLOCK_Y * GPUJPEG_IDCT_BLOCK_X
 			* GPUJPEG_IDCT_BLOCK_Z;
 
 	//pointer to the begin of data for this thread block
 	int16_t* sourcePtr = (int16_t*) (source) + picBlockNumber * 8;
 
-	__shared__ float data[GPUJPEG_IDCT_BLOCK_Z][8][GPUJPEG_IDCT_BLOCK_Y][GPUJPEG_IDCT_BLOCK_X + 1];
+#ifdef GPUJPEG_USE_SYCL
+	// For SYCL, get pointer to shared memory and cast to appropriate type
+	float (*data)[8][GPUJPEG_IDCT_BLOCK_Y][GPUJPEG_IDCT_BLOCK_X + 1] = 
+		reinterpret_cast<float (*)[8][GPUJPEG_IDCT_BLOCK_Y][GPUJPEG_IDCT_BLOCK_X + 1]>(_sycl_shared_mem.get_multi_ptr<sycl::access::decorated::no>().get());
+#else
+	GPU_SHARED float data[GPUJPEG_IDCT_BLOCK_Z][8][GPUJPEG_IDCT_BLOCK_Y][GPUJPEG_IDCT_BLOCK_X + 1];
+#endif
 
 	//variables to be used later more times (only one multiplication here)
-	unsigned int z64 = threadIdx.z * 64;
-	unsigned int x8 = threadIdx.x * 8;
+	unsigned int z64 = GPU_THREAD_IDX_Z * 64;
+	unsigned int x8 = GPU_THREAD_IDX_X * 8;
 
 	//data copying global -> shared, type casting int16_t -> float and dequantization.
 	//16b reading gives only 50% efectivity but another ways are too complicated 
 	//so this proves to be the fastest way
 #pragma unroll
 	for (int i = 0; i < 8; i++) {
-		data[threadIdx.z][i][threadIdx.x][threadIdx.y] = sourcePtr[x8
-				+ threadIdx.y + i * GPUJPEG_IDCT_BLOCK_X * GPUJPEG_IDCT_BLOCK_Y + z64 * 8]
-				* quantization_table[threadIdx.x * 8 + threadIdx.y];
+		data[GPU_THREAD_IDX_Z][i][GPU_THREAD_IDX_X][GPU_THREAD_IDX_Y] = sourcePtr[x8
+				+ GPU_THREAD_IDX_Y + i * GPUJPEG_IDCT_BLOCK_X * GPUJPEG_IDCT_BLOCK_Y + z64 * 8]
+				* quantization_table[GPU_THREAD_IDX_X * 8 + GPU_THREAD_IDX_Y];
 	}
 	
-	__syncthreads();
+	GPU_SYNCTHREADS();
 
 	float x[8];
 
@@ -511,43 +527,43 @@ gpujpeg_idct_gpu_kernel(int16_t* source, uint8_t* result, int output_stride, uin
 
 	//here the data are being processed by columns - each thread processes one column
 #if GPUJPEG_IDCT_USE_ASM
-	GPUJPEG_IDCT_GPU_KERNEL_INPLACE(data[threadIdx.z][threadIdx.x][0][threadIdx.y],
-			data[threadIdx.z][threadIdx.x][4][threadIdx.y],
-			data[threadIdx.z][threadIdx.x][6][threadIdx.y],
-			data[threadIdx.z][threadIdx.x][2][threadIdx.y],
-			data[threadIdx.z][threadIdx.x][7][threadIdx.y],
-			data[threadIdx.z][threadIdx.x][5][threadIdx.y],
-			data[threadIdx.z][threadIdx.x][3][threadIdx.y],
-			data[threadIdx.z][threadIdx.x][1][threadIdx.y],
+	GPUJPEG_IDCT_GPU_KERNEL_INPLACE(data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][0][GPU_THREAD_IDX_Y],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][4][GPU_THREAD_IDX_Y],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][6][GPU_THREAD_IDX_Y],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][2][GPU_THREAD_IDX_Y],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][7][GPU_THREAD_IDX_Y],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][5][GPU_THREAD_IDX_Y],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][3][GPU_THREAD_IDX_Y],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][1][GPU_THREAD_IDX_Y],
 
-			data[threadIdx.z][threadIdx.x][0][threadIdx.y],
-			data[threadIdx.z][threadIdx.x][1][threadIdx.y],
-			data[threadIdx.z][threadIdx.x][2][threadIdx.y],
-			data[threadIdx.z][threadIdx.x][3][threadIdx.y],
-			data[threadIdx.z][threadIdx.x][4][threadIdx.y],
-			data[threadIdx.z][threadIdx.x][5][threadIdx.y],
-			data[threadIdx.z][threadIdx.x][6][threadIdx.y],
-			data[threadIdx.z][threadIdx.x][7][threadIdx.y])
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][0][GPU_THREAD_IDX_Y],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][1][GPU_THREAD_IDX_Y],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][2][GPU_THREAD_IDX_Y],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][3][GPU_THREAD_IDX_Y],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][4][GPU_THREAD_IDX_Y],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][5][GPU_THREAD_IDX_Y],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][6][GPU_THREAD_IDX_Y],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][7][GPU_THREAD_IDX_Y])
 #else
-	x[0] = data[threadIdx.z][threadIdx.x][0][threadIdx.y];
-	x[1] = data[threadIdx.z][threadIdx.x][4][threadIdx.y];
-	x[2] = data[threadIdx.z][threadIdx.x][6][threadIdx.y];
-	x[3] = data[threadIdx.z][threadIdx.x][2][threadIdx.y];
-	x[4] = data[threadIdx.z][threadIdx.x][7][threadIdx.y];
-	x[5] = data[threadIdx.z][threadIdx.x][5][threadIdx.y];
-	x[6] = data[threadIdx.z][threadIdx.x][3][threadIdx.y];
-	x[7] = data[threadIdx.z][threadIdx.x][1][threadIdx.y];
+	x[0] = data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][0][GPU_THREAD_IDX_Y];
+	x[1] = data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][4][GPU_THREAD_IDX_Y];
+	x[2] = data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][6][GPU_THREAD_IDX_Y];
+	x[3] = data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][2][GPU_THREAD_IDX_Y];
+	x[4] = data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][7][GPU_THREAD_IDX_Y];
+	x[5] = data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][5][GPU_THREAD_IDX_Y];
+	x[6] = data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][3][GPU_THREAD_IDX_Y];
+	x[7] = data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][1][GPU_THREAD_IDX_Y];
 	
 	gpujpeg_idct_gpu_kernel_inplace(x);
 
-	data[threadIdx.z][threadIdx.x][0][threadIdx.y] = x[0];
-	data[threadIdx.z][threadIdx.x][1][threadIdx.y] = x[1];
-	data[threadIdx.z][threadIdx.x][2][threadIdx.y] = x[2];
-	data[threadIdx.z][threadIdx.x][3][threadIdx.y] = x[3];
-	data[threadIdx.z][threadIdx.x][4][threadIdx.y] = x[4];
-	data[threadIdx.z][threadIdx.x][5][threadIdx.y] = x[5];
-	data[threadIdx.z][threadIdx.x][6][threadIdx.y] = x[6];
-	data[threadIdx.z][threadIdx.x][7][threadIdx.y] = x[7];
+	data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][0][GPU_THREAD_IDX_Y] = x[0];
+	data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][1][GPU_THREAD_IDX_Y] = x[1];
+	data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][2][GPU_THREAD_IDX_Y] = x[2];
+	data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][3][GPU_THREAD_IDX_Y] = x[3];
+	data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][4][GPU_THREAD_IDX_Y] = x[4];
+	data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][5][GPU_THREAD_IDX_Y] = x[5];
+	data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][6][GPU_THREAD_IDX_Y] = x[6];
+	data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][7][GPU_THREAD_IDX_Y] = x[7];
 #endif
 	//between data writing and sync it's good to compute something useful 
 	// - the sync will be shorter.
@@ -556,36 +572,36 @@ gpujpeg_idct_gpu_kernel(int16_t* source, uint8_t* result, int output_stride, uin
 	unsigned int firstByteOfActualBlock = x8 + z64 + picBlockNumber;
 
 	//output pointer for this thread + output row shift; each thread writes 1 row of an 
-	//output block (8B), threads [0 - 7] in threadIdx.x write blocks next to each other,
-	//threads [1 - 7] in threadIdx.y write next rows of a block; threads [0 - 1] in 
-	//threadIdx.z write next 8 blocks
+	//output block (8B), threads [0 - 7] in GPU_THREAD_IDX_X write blocks next to each other,
+	//threads [1 - 7] in GPU_THREAD_IDX_Y write next rows of a block; threads [0 - 1] in 
+	//GPU_THREAD_IDX_Z write next 8 blocks
 	uint8_t* resultPtr = ((uint8_t*) result) + firstByteOfActualBlock
-			+ (threadIdx.y + ((firstByteOfActualBlock / output_stride) * 7))
+			+ (GPU_THREAD_IDX_Y + ((firstByteOfActualBlock / output_stride) * 7))
 					* output_stride;
 
-	__syncthreads();
+	GPU_SYNCTHREADS();
 
 #if GPUJPEG_IDCT_USE_ASM
 	//here the data are being processed by rows - each thread processes one row
-	GPUJPEG_IDCT_GPU_KERNEL_INPLACE(data[threadIdx.z][threadIdx.x][threadIdx.y][0],
-			data[threadIdx.z][threadIdx.x][threadIdx.y][4],
-			data[threadIdx.z][threadIdx.x][threadIdx.y][6],
-			data[threadIdx.z][threadIdx.x][threadIdx.y][2],
-			data[threadIdx.z][threadIdx.x][threadIdx.y][7],
-			data[threadIdx.z][threadIdx.x][threadIdx.y][5],
-			data[threadIdx.z][threadIdx.x][threadIdx.y][3],
-			data[threadIdx.z][threadIdx.x][threadIdx.y][1],
+	GPUJPEG_IDCT_GPU_KERNEL_INPLACE(data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][GPU_THREAD_IDX_Y][0],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][GPU_THREAD_IDX_Y][4],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][GPU_THREAD_IDX_Y][6],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][GPU_THREAD_IDX_Y][2],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][GPU_THREAD_IDX_Y][7],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][GPU_THREAD_IDX_Y][5],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][GPU_THREAD_IDX_Y][3],
+			data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][GPU_THREAD_IDX_Y][1],
 
 			x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7])
 #else
-	x[0] = data[threadIdx.z][threadIdx.x][threadIdx.y][0];
-	x[1] = data[threadIdx.z][threadIdx.x][threadIdx.y][4];
-	x[2] = data[threadIdx.z][threadIdx.x][threadIdx.y][6];
-	x[3] = data[threadIdx.z][threadIdx.x][threadIdx.y][2];
-	x[4] = data[threadIdx.z][threadIdx.x][threadIdx.y][7];
-	x[5] = data[threadIdx.z][threadIdx.x][threadIdx.y][5];
-	x[6] = data[threadIdx.z][threadIdx.x][threadIdx.y][3];
-	x[7] = data[threadIdx.z][threadIdx.x][threadIdx.y][1];
+	x[0] = data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][GPU_THREAD_IDX_Y][0];
+	x[1] = data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][GPU_THREAD_IDX_Y][4];
+	x[2] = data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][GPU_THREAD_IDX_Y][6];
+	x[3] = data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][GPU_THREAD_IDX_Y][2];
+	x[4] = data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][GPU_THREAD_IDX_Y][7];
+	x[5] = data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][GPU_THREAD_IDX_Y][5];
+	x[6] = data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][GPU_THREAD_IDX_Y][3];
+	x[7] = data[GPU_THREAD_IDX_Z][GPU_THREAD_IDX_X][GPU_THREAD_IDX_Y][1];
 
 	gpujpeg_idct_gpu_kernel_inplace(x);
 #endif
@@ -602,8 +618,14 @@ gpujpeg_idct_gpu_kernel(int16_t* source, uint8_t* result, int output_stride, uin
 		//cast float to uint8_t with saturation (.sat) which cuts values higher than 
 		//255 to 255 and smaller than 0 to 0; cuda can't use a reg smaller than 32b 
 		//(though it can convert to 8b for the saturation purposes and save to 32b reg)
-		uint32_t save;
-		asm("cvt.rni.u8.f32.sat	%0, %1;" : "=r"(save) : "f"(x[i] + ((float) 128.0)));
+		// uint32_t save;
+		// asm("cvt.rni.u8.f32.sat	%0, %1;" : "=r"(save) : "f"(x[i] + ((float) 128.0)));
+
+		// Following workaround enables GPUJPEG with ZLUDA (see GH-90). May be slower
+		// but not measurable because perhaps the computation time is masked by global
+		// memory transfers. Also portable to HIP and SYCL.
+		int save = GPU_RINTF(x[i] + 128.0F);
+		save = save < 0 ? 0 : save > 255 ? 255 : save;
 		((uint8_t*) tempResultP)[i] = save;
 	}
 
@@ -619,7 +641,7 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder)
     struct gpujpeg_coder* coder = &encoder->coder;
 
     // Encode each component
-    for ( int comp = 0; comp < coder->param_image.comp_count; comp++ ) {
+    for ( int comp = 0; comp < coder->param.comp_count; comp++ ) {
         // Get component
         struct gpujpeg_component* component = &coder->component[comp];
 
@@ -627,16 +649,22 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder)
         enum gpujpeg_component_type type = encoder->coder.component[comp].type;
         const float* const d_quantization_table = encoder->table_quantization[type].d_table_forward;
 
-        // copy the quantization table into constant memory for devices of CC < 2.0
+        // copy the quantization table into memory for devices of CC < 2.0 (only allocate once)
         if( encoder->coder.cuda_cc_major < 2 ) {
-            cudaMemcpyToSymbolAsync(
+            // Allocate memory for quantization table if not already allocated (global resource)
+            if (gpujpeg_dct_gpu_quantization_table_const == NULL) {
+                if (gpuMalloc((void**)&gpujpeg_dct_gpu_quantization_table_const, 64 * sizeof(float)) != gpuSuccess) {
+                    gpujpeg_cuda_check_error("Allocation of DCT quantization table failed", return -1);
+                }
+            }
+            if (gpuMemcpyAsync(
                 gpujpeg_dct_gpu_quantization_table_const,
                 d_quantization_table,
-                sizeof(gpujpeg_dct_gpu_quantization_table_const),
-                0,
-                cudaMemcpyDeviceToDevice,
-                encoder->stream
-            );
+                64 * sizeof(float),
+                gpuMemcpyDeviceToDevice,
+                coder->stream
+            ) != gpuSuccess)
+                return -1;
             gpujpeg_cuda_check_error("Quantization table memcpy failed", return -1);
         }
 
@@ -649,6 +677,15 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder)
 
         enum { WARP_COUNT = 4 };
 
+        // Calculate shared memory size needed
+        typedef float dct_t;
+        enum {
+            SHARED_STRIDE_DCT = ((32 * sizeof(dct_t)) | 4) / sizeof(dct_t),
+            SHARED_SIZE_WARP_DCT = SHARED_STRIDE_DCT * 8,
+            SHARED_SIZE_TOTAL_DCT = SHARED_SIZE_WARP_DCT * WARP_COUNT
+        };
+        size_t shared_mem_size = SHARED_SIZE_TOTAL_DCT * sizeof(dct_t);
+
         // Perform block-wise DCT processing
         dim3 dct_grid(
             gpujpeg_div_and_round_up(block_count_x, 4),
@@ -656,7 +693,32 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder)
             1
         );
         dim3 dct_block(4 * 8, WARP_COUNT);
-        gpujpeg_dct_gpu_kernel<WARP_COUNT><<<dct_grid, dct_block, 0, encoder->stream>>>(
+#ifdef GPUJPEG_USE_SYCL
+        GPUJPEG_KERNEL_LAUNCH_LOG(gpujpeg_dct_gpu_kernel<WARP_COUNT>, dct_grid, dct_block, shared_mem_size, coder->stream);
+        sycl::queue* sycl_q = coder->stream;
+        if (!sycl_q) {
+            sycl_q = gpujpeg_sycl::get_current_queue();
+        }
+        sycl::range<3> global_range(dct_grid.z * dct_block.z, dct_grid.y * dct_block.y, dct_grid.x * dct_block.x);
+        sycl::range<3> local_range(dct_block.z, dct_block.y, dct_block.x);
+        GPUJPEG_SYCL_TIMER_START(_start_time);
+        sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
+            sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size), cgh);
+            cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                            [local_mem, block_count_x, block_count_y, 
+                             d_data = component->d_data, 
+                             data_width = component->data_width,
+                             d_data_quantized = component->d_data_quantized,
+                             stride = component->data_width * GPUJPEG_BLOCK_SIZE,
+                             d_quantization_table](sycl::nd_item<3> item) {
+                gpujpeg_dct_gpu_kernel<WARP_COUNT>(item, local_mem, block_count_x, block_count_y, 
+                                                   d_data, data_width, d_data_quantized, stride, d_quantization_table);
+            });
+        });
+        GPUJPEG_SYCL_KERNEL_WAIT_AND_PROFILE(_sycl_e, _start_time, "gpujpeg_dct_gpu_kernel");
+
+#else
+        GPU_KERNEL_LAUNCH(gpujpeg_dct_gpu_kernel<WARP_COUNT>, dct_grid, dct_block, shared_mem_size, coder->stream,
             block_count_x,
             block_count_y,
             component->d_data,
@@ -665,7 +727,8 @@ gpujpeg_dct_gpu(struct gpujpeg_encoder* encoder)
             component->data_width * GPUJPEG_BLOCK_SIZE,
             d_quantization_table
         );
-        gpujpeg_cuda_check_error("Quantization table memcpy failed", return -1);
+#endif
+        gpujpeg_cuda_check_error("DCT kernel failed", return -1);
     }
 
     return 0;
@@ -679,7 +742,7 @@ gpujpeg_idct_gpu(struct gpujpeg_decoder* decoder)
     struct gpujpeg_coder* coder = &decoder->coder;
 
     // Encode each component
-    for ( int comp = 0; comp < coder->param_image.comp_count; comp++ ) {
+    for ( int comp = 0; comp < coder->param.comp_count; comp++ ) {
         // Get component
         struct gpujpeg_component* component = &coder->component[comp];
 
@@ -693,27 +756,60 @@ gpujpeg_idct_gpu(struct gpujpeg_decoder* decoder)
         // Get quantization table
         uint16_t* d_quantization_table = decoder->table_quantization[decoder->comp_table_quantization_map[comp]].d_table;
 
-        // Copy quantization table to constant memory
-        cudaMemcpyToSymbolAsync(
+        // Copy quantization table to memory
+        // Allocate memory for quantization table if not already allocated (only once - global resource)
+        if (gpujpeg_idct_gpu_quantization_table == NULL) {
+            if (gpuMalloc((void**)&gpujpeg_idct_gpu_quantization_table, 64 * sizeof(uint16_t)) != gpuSuccess) {
+                gpujpeg_cuda_check_error("Allocation of IDCT quantization table failed", return -1);
+            }
+        }
+        if (gpuMemcpyAsync(
             gpujpeg_idct_gpu_quantization_table,
             d_quantization_table,
             64 * sizeof(uint16_t),
-            0,
-            cudaMemcpyDeviceToDevice,
-            decoder->stream
-        );
-        gpujpeg_cuda_check_error("Copy IDCT quantization table to constant memory", return -1);
+            gpuMemcpyDeviceToDevice,
+            coder->stream
+        ) != gpuSuccess)
+            return -1;
+        gpujpeg_cuda_check_error("Copy IDCT quantization table to memory", return -1);
+
+        // Calculate shared memory size for IDCT
+        size_t shared_mem_size_idct = GPUJPEG_IDCT_BLOCK_Z * 8 * GPUJPEG_IDCT_BLOCK_Y * (GPUJPEG_IDCT_BLOCK_X + 1) * sizeof(float);
 
         dim3 dct_grid(gpujpeg_div_and_round_up(block_count_x * block_count_y,
 				(GPUJPEG_IDCT_BLOCK_X * GPUJPEG_IDCT_BLOCK_Y * GPUJPEG_IDCT_BLOCK_Z) / GPUJPEG_BLOCK_SIZE), 1);
         dim3 dct_block(GPUJPEG_IDCT_BLOCK_X, GPUJPEG_IDCT_BLOCK_Y, GPUJPEG_IDCT_BLOCK_Z);
  
-        gpujpeg_idct_gpu_kernel<<<dct_grid, dct_block, 0, decoder->stream>>>(
+#ifdef GPUJPEG_USE_SYCL
+        GPUJPEG_KERNEL_LAUNCH_LOG(gpujpeg_idct_gpu_kernel, dct_grid, dct_block, shared_mem_size_idct, coder->stream);
+        sycl::queue* sycl_q = coder->stream;
+        if (!sycl_q) {
+            sycl_q = gpujpeg_sycl::get_current_queue();
+        }
+        sycl::range<3> global_range(dct_grid.z * dct_block.z, dct_grid.y * dct_block.y, dct_grid.x * dct_block.x);
+        sycl::range<3> local_range(dct_block.z, dct_block.y, dct_block.x);
+        GPUJPEG_SYCL_TIMER_START(_start_time);
+        sycl::event _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
+            sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(shared_mem_size_idct), cgh);
+            cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                            [local_mem, 
+                             d_data_quantized = component->d_data_quantized,
+                             d_data = component->d_data,
+                             data_width = component->data_width,
+                             d_quantization_table](sycl::nd_item<3> item) {
+                gpujpeg_idct_gpu_kernel(item, local_mem, d_data_quantized, d_data, data_width, d_quantization_table);
+            });
+        });
+        GPUJPEG_SYCL_KERNEL_WAIT_AND_PROFILE(_sycl_e, _start_time, "gpujpeg_idct_gpu_kernel");
+
+#else
+        GPU_KERNEL_LAUNCH(gpujpeg_idct_gpu_kernel, dct_grid, dct_block, shared_mem_size_idct, coder->stream,
             component->d_data_quantized,
             component->d_data,
             component->data_width,
             d_quantization_table
         );
+#endif
         gpujpeg_cuda_check_error("Inverse Integer DCT failed", return -1);
     }
 

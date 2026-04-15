@@ -1,6 +1,6 @@
 /**
  * @file
- * Copyright (c) 2011-2020, CESNET z.s.p.o
+ * Copyright (c) 2011-2025, CESNET
  * Copyright (c) 2011, Silicon Genome, LLC.
  *
  * All rights reserved.
@@ -31,7 +31,11 @@
 #ifndef GPUJPEG_TYPE_H
 #define GPUJPEG_TYPE_H
 
+#ifdef __cplusplus
+#include <cstdint>
+#else
 #include <stdint.h>
+#endif
 
 #ifndef _MSC_VER
 #define ATTRIBUTE_UNUSED __attribute__((unused))
@@ -39,25 +43,36 @@
 #define ATTRIBUTE_UNUSED
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/** Contants */
+/**
+ * @addtogroup Contants
+ * @{
+ */
 #define GPUJPEG_MAX_COMPONENT_COUNT             4
+/// @}
 
-/** Flags */
-#define GPUJPEG_VERBOSE                         1
-#define GPUJPEG_OPENGL_INTEROPERABILITY         2
+/**
+ * @addtogroup Flags
+ * @{
+ */
+#define GPUJPEG_INIT_DEV_VERBOSE                1
+/// @deprecated use @ref GPUJPEG_INIT_VERBOSE
+#define GPUJPEG_VERBOSE                 GPUJPEG_INIT_DEV_VERBOSE
+/// @}
 
 /** Maximum number of segment info header in stream */
 #define GPUJPEG_MAX_SEGMENT_INFO_HEADER_COUNT   100
 
-/** Errors */
+/**
+ * @addtogroup Errors
+ * @{
+ */
 #define GPUJPEG_NOERR                           0
 #define GPUJPEG_ERROR                           (-1)
-#define GPUJPEG_ERR_WRONG_SUBSAMPLING           (-2)
-#define GPUJPEG_ERR_RESTART_CHANGE              (-3)
+#define GPUJPEG_ERR_RESTART_CHANGE              (-2)
+/// @}
+
+#define GPUJPEG_VAL_TRUE  "1"
+#define GPUJPEG_VAL_FALSE "0"
 
 /**
  * Color spaces for JPEG codec
@@ -67,10 +82,19 @@ enum gpujpeg_color_space {
     GPUJPEG_RGB = 1,
     GPUJPEG_YCBCR_BT601 = 2,         ///< limited-range YCbCr BT.601
     GPUJPEG_YCBCR_BT601_256LVLS = 3, ///< full-range YCbCr BT.601
-    GPUJPEG_YCBCR_JPEG = GPUJPEG_YCBCR_BT601_256LVLS,
+    GPUJPEG_YCBCR_JPEG = GPUJPEG_YCBCR_BT601_256LVLS, ///< @ref GPUJPEG_YCBCR_BT601_256LVLS
     GPUJPEG_YCBCR_BT709 = 4,         ///< limited-range YCbCr BT.709
-    GPUJPEG_YCBCR = GPUJPEG_YCBCR_BT709,
+    GPUJPEG_YCBCR = GPUJPEG_YCBCR_BT709, ///< @ref GPUJPEG_YCBCR_BT709
     GPUJPEG_YUV = 5                  ///< @deprecated will be removed soon (is this ever needed?), define ENABLE_YUV to enable pre/post processors
+};
+
+enum gpujpeg_header_type {
+    GPUJPEG_HEADER_DEFAULT = 0, ///< for 1 or 3 channel @ref GPUJPEG_YCBCR_JPEG @ref GPUJPEG_HEADER_JFIF, for @ref
+                                ///< GPUJPEG_RGB @ref GPUJPEG_HEADER_ADOBE, @ref GPUJPEG_HEADER_SPIFF otherwise
+    GPUJPEG_HEADER_JFIF = 1 << 0,
+    GPUJPEG_HEADER_SPIFF = 1 << 1,
+    GPUJPEG_HEADER_ADOBE = 1 << 2, ///< Adobe APP8 header
+    GPUJPEG_HEADER_EXIF = 1 << 3,
 };
 
 /**
@@ -99,18 +123,12 @@ enum gpujpeg_pixel_format {
     /// 8bit unsigned samples, planar, 3 components, 4:2:0, planar
     GPUJPEG_420_U8_P0P1P2 = 5,
 
-    /// 8bit unsigned samples, 3 components, each pixel padded to 32bits
-    /// with zero byte, 4:4:4 sampling, interleaved
-    GPUJPEG_444_U8_P012Z =  6,
-
     /// 8bit unsigned samples, 3 or 4 components, each pixel padded to 32bits
-    /// with optional alpha (if comp_count=4) or filled with 0xFF, 4:4:4(:4) sampling, interleaved
-    GPUJPEG_444_U8_P012A = 7,
-
-    GPUJPEG_444_U16_P012O =  8,
-    GPUJPEG_444_F32_P012O =  9,
+    /// with optional alpha or unused, 4:4:4(:4) sampling, interleaved
+    GPUJPEG_4444_U8_P0123 = 6,
+    GPUJPEG_4444_U16_P0123 = 7,
+    GPUJPEG_4444_F32_P0123 = 8,
 };
-#define GPUJPEG_PIXFMT_NO_ALPHA (-2) ///< placeholder for any pixel format without alpha channel, outside the enum to avoid -Wswitch warns
 
 /**
  * Sampling factor for color component in JPEG format
@@ -121,26 +139,24 @@ struct gpujpeg_component_sampling_factor
     uint8_t vertical;
 };
 
-/**
- * JPEG component type
- */
-enum gpujpeg_component_type {
-    GPUJPEG_COMPONENT_LUMINANCE = 0,
-    GPUJPEG_COMPONENT_CHROMINANCE = 1,
-    GPUJPEG_COMPONENT_TYPE_COUNT = 2
+enum {
+    GPUJPEG_METADATA_ORIENTATION,
+    GPUJPEG_METADATA_COUNT,
 };
-
-/**
- * JPEG huffman type
- */
-enum gpujpeg_huffman_type {
-    GPUJPEG_HUFFMAN_DC = 0,
-    GPUJPEG_HUFFMAN_AC = 1,
-    GPUJPEG_HUFFMAN_TYPE_COUNT = 2
+struct gpujpeg_orientation /// as defined in SPIFF
+{
+    unsigned rotation : 2; ///< in multiples of 90° clock-wise
+    unsigned flip : 1;     ///< 1 - left-to-right orientation flipped after rotation applied
 };
-
-#ifdef __cplusplus
-}
-#endif
+struct gpujpeg_image_metadata
+{
+    struct
+    {
+        union {
+            struct gpujpeg_orientation orient;
+        };
+        unsigned set : 1; ///< item is set, otherwise the union value is undefined
+    } vals[GPUJPEG_METADATA_COUNT];
+};
 
 #endif // GPUJPEG_TYPE_H

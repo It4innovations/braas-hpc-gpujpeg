@@ -1,6 +1,6 @@
 /**
  * @file
- * Copyright (c) 2011-2021, CESNET z.s.p.o
+ * Copyright (c) 2011-2025, CESNET
  * Copyright (c) 2011, Silicon Genome, LLC.
  *
  * All rights reserved.
@@ -33,10 +33,6 @@
 
 #include "gpujpeg_decoder_internal.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /**
  * Init preprocessor decoder
  *
@@ -44,7 +40,7 @@ extern "C" {
  * @return 0 if succeeds, otherwise nonzero
  */
 int
-gpujpeg_preprocessor_decoder_init(struct gpujpeg_coder* coder);
+gpujpeg_postprocessor_decoder_init(struct gpujpeg_coder* coder);
 
 /**
  * Preprocessor decode
@@ -56,10 +52,6 @@ gpujpeg_preprocessor_decoder_init(struct gpujpeg_coder* coder);
  * @retval -2 JPEG with source subsampling cannot be decoded to specified planar pixel format
  */
 int
-gpujpeg_preprocessor_decode(struct gpujpeg_coder* coder, cudaStream_t stream);
-
-#ifdef __cplusplus
-}
-#endif
+gpujpeg_postprocessor_decode(struct gpujpeg_coder* coder, gpuStream_t stream);
 
 #endif // GPUJPEG_POSTPROCESSOR_H

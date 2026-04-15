@@ -33,10 +33,6 @@
 
 #include "gpujpeg_encoder_internal.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 struct gpujpeg_huffman_gpu_encoder;
 
 /**
@@ -66,9 +62,5 @@ gpujpeg_huffman_gpu_encoder_destroy(struct gpujpeg_huffman_gpu_encoder * huffman
  */
 int
 gpujpeg_huffman_gpu_encoder_encode(struct gpujpeg_encoder* encoder, struct gpujpeg_huffman_gpu_encoder * huffman_gpu_encoder, unsigned int * output_byte_count);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // GPUJPEG_HUFFMAN_GPU_ENCODER_H

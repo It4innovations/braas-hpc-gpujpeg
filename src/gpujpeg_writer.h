@@ -1,6 +1,6 @@
 /**
  * @file
- * Copyright (c) 2011-2020, CESNET z.s.p.o
+ * Copyright (c) 2011-2025, CESNET z.s.p.o
  * Copyright (c) 2011, Silicon Genome, LLC.
  *
  * All rights reserved.
@@ -31,15 +31,13 @@
 #ifndef GPUJPEG_WRITER_H
 #define GPUJPEG_WRITER_H
 
-#include <libgpujpeg/gpujpeg_type.h>
+#include <stdbool.h>
 #include <stddef.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include "../libgpujpeg/gpujpeg_type.h"
 
 /** JPEG encoder structure predeclaration */
 struct gpujpeg_encoder;
+struct gpujpeg_exif_tags;
 struct gpujpeg_image_parameters;
 
 /** JPEG writer structure */
@@ -51,6 +49,7 @@ struct gpujpeg_writer
     uint8_t* buffer_current;
     // Allocate size of output buffer.
     size_t buffer_allocated_size;
+    bool buffer_pinned; ///< buffer should be allocated in pinned memory
 
     // Segment info buffers (every buffer is placed inside another header)
     uint8_t* segment_info[GPUJPEG_MAX_SEGMENT_INFO_HEADER_COUNT];
@@ -60,6 +59,9 @@ struct gpujpeg_writer
     uint8_t* segment_info_position;
     // Segment info current segment index
     int segment_info_index;
+
+    struct gpujpeg_image_metadata metadata;
+    struct gpujpeg_exif_tags *exif_tags;
 };
 
 /**
@@ -68,7 +70,7 @@ struct gpujpeg_writer
  * @return writer structure if succeeds, otherwise NULL
  */
 struct gpujpeg_writer*
-gpujpeg_writer_create();
+gpujpeg_writer_create(void);
 
 /**
  * Init JPEG writer.
@@ -78,7 +80,7 @@ gpujpeg_writer_create();
  * @return 0 if succeeds, otherwise nonzero
  */
 int
-gpujpeg_writer_init(struct gpujpeg_writer* writer, struct gpujpeg_image_parameters* param_image);
+gpujpeg_writer_init(struct gpujpeg_writer* writer, int comp_count, struct gpujpeg_image_parameters* param_image);
 
 /**
  * Destroy JPEG writer
@@ -163,9 +165,5 @@ gpujpeg_writer_write_segment_info(struct gpujpeg_encoder* encoder);
  */
 void
 gpujpeg_writer_write_scan_header(struct gpujpeg_encoder* encoder, int scan_index);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // GPUJPEG_WRITER_H

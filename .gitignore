@@ -1,20 +1,22 @@
 gpujpeg
+.cache
+.clang-tidy
+.envrc
 .libs
 src/*.o
 src/*.lo
 *.rgb
 *.vim
 /build*
+build_hipcc
 configure
 Makefile
 Makefile.in
 aclocal.m4
 autom4te.cache/
 compile
+compile_flags.txt
 config.guess
-config.h
-config.h.in
-config.h.in~
 config.log
 config.status
 config.sub
@@ -25,6 +27,7 @@ depcomp
 install-sh
 libgpujpeg.pc
 libtool
+/local/
 ltmain.sh
 m4/
 missing
@@ -34,6 +37,7 @@ stamp-h1
 libgpujpeg.la
 tags
 test-driver
+test/test_sycl
 
 # VS
 *.pdb
@@ -43,3 +47,4 @@ test-driver
 Debug
 Release
 
+test/test_sycl.exe

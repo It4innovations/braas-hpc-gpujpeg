@@ -1,6 +1,6 @@
 /**
  * @file
- * Copyright (c) 2011-2020, CESNET z.s.p.o
+ * Copyright (c) 2011-2025, CESNET
  * Copyright (c) 2011, Silicon Genome, LLC.
  *
  * All rights reserved.
@@ -31,9 +31,10 @@
 #ifndef GPUJPEG_DECODER_INTERNAL_H
 #define GPUJPEG_DECODER_INTERNAL_H
 
-#include <libgpujpeg/gpujpeg_common.h>
+#include <stdbool.h>
+
+#include "../libgpujpeg/gpujpeg_common.h"
 #include "gpujpeg_common_internal.h"
-#include "gpujpeg_reader.h"
 #include "gpujpeg_table.h"
 
 /**
@@ -44,9 +45,6 @@ struct gpujpeg_decoder
     /// JPEG coder structure
     struct gpujpeg_coder coder;
     
-    /// JPEG reader structure
-    struct gpujpeg_reader* reader;
-
     struct gpujpeg_huffman_gpu_decoder *huffman_gpu_decoder;
 
     uint8_t comp_id[GPUJPEG_MAX_COMPONENT_COUNT]; /// component IDs defined by SOF
@@ -65,10 +63,15 @@ struct gpujpeg_decoder
     int segment_count;
     
     /// Current data compressed size for decoded image
-    int data_compressed_size;
+    size_t data_compressed_size;
 
-    // Stream
-    cudaStream_t stream;
+    enum gpujpeg_pixel_format req_pixel_format;
+    enum gpujpeg_color_space req_color_space;
+    bool ff_cs_itu601_is_709; ///< if FFmpeg specific COM marker "CS=ITU601" present, interpret the data as
+                              ///< limited-range BT.709 not BT.601
+
+    /// metadata associated with last decoded image
+    struct gpujpeg_image_metadata metadata;
 };
 
 #endif // GPUJPEG_DECODER_INTERNAL_H

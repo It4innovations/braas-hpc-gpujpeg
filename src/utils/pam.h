@@ -1,9 +1,14 @@
 /**
  * @file   utils/pam.h
  * @author Martin Pulec     <pulec@cesnet.cz>
+ *
+ * Very simple library to read and write PAM/PPM files. Only binary formats
+ * (P5, P6) for PNM are processed, P4 is also not used.
+ *
+ * This file is part of GPUJPEG.
  */
 /*
- * Copyright (c) 2013-2022, CESNET z.s.p.o.
+ * Copyright (c) 2013-2025, CESNET
  *
  * All rights reserved.
  *
@@ -34,111 +39,58 @@
 #define PAM_H_7E23A609_963A_45A8_88E2_ED4D3FDFF69F
 
 #ifdef __cplusplus
-#include <cstdio>
-#include <cstdlib>
+#include <cstddef>
 #else
 #include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <stddef.h>
 #endif
 
-static inline bool pam_read(const char *filename, unsigned int *width, unsigned int *height, int *depth, unsigned char **data, void *(*allocator)(size_t)) {
-        char line[128];
-        FILE *file = fopen(filename, "rb");
-        if (!file) {
-                fprintf(stderr, "Failed to open %s!", filename);
-                return false;
-        }
-        fgets(line, sizeof line - 1, file);
-        if (feof(file) || ferror(file) || strcmp(line, "P7\n") != 0) {
-               fprintf(stderr, "File '%s' doesn't seem to be valid PAM.", filename);
-               fclose(file);
-               return false;
-        }
-        fgets(line, sizeof line - 1, file);
-        *width = 0, *height = 0, *depth = 0;
-        while (!feof(file) && !ferror(file)) {
-                char *spc = strchr(line, ' ');
-                if (spc != NULL) {
-                        const char *key = line;
-                        *spc = '\0';
-                        const char *val = spc + 1;
-                        if (strcmp(key, "WIDTH") == 0) {
-                                *width = atoi(val);
-                        } else if (strcmp(key, "HEIGHT") == 0) {
-                                *height = atoi(val);
-                        } else if (strcmp(key, "DEPTH") == 0) {
-                                *depth = atoi(val);
-                        } else if (strcmp(key, "MAXVAL") == 0) {
-                                if (atoi(val) != 255) {
-                                        fprintf(stderr, "Only supported maxval is 255.\n");
-                                        fclose(file);
-                                        return false;
-                                }
-                        } else if (strcmp(key, "TUPLETYPE") == 0) {
-                                // ignored - assuming MAXVAL == 255, value of DEPTH is sufficient
-                                // to determine pixel format
-                        }
-                } else if (strcmp(line, "ENDHDR\n") == 0) {
-                        break;
-                }
-                fgets(line, sizeof line - 1, file);
-        }
-        if (*width * *height == 0) {
-                fprintf(stderr, "Unspecified size header field!");
-                fclose(file);
-                return false;
-        }
-        if (*depth == 0) {
-                fprintf(stderr, "Unspecified depth header field!");
-                fclose(file);
-                return false;
-        }
-        if (data != NULL && allocator != NULL) {
-                int datalen = *depth * *width * *height;
-                *data = (unsigned char *) allocator(datalen);
-                if (!*data) {
-                        fprintf(stderr, "Unspecified depth header field!");
-                        fclose(file);
-                        return false;
-                }
-                fread((char *) *data, datalen, 1, file);
-                if (feof(file) || ferror(file)) {
-                        fprintf(stderr, "Unable to load PAM data from file.");
-                        fclose(file);
-                        return false;
-                }
-        }
-        fclose(file);
-        return true;
-}
+/// metadata read from file
+struct pam_metadata {
+        int width;    ///< image width
+        int height;   ///< image height
+        int ch_count; ///< number of channels
+        int maxval;   ///< sample maximal value (typically but not necessarily
+                      ///< 255)
+        bool bitmap_pbm; ///< bitmap data is stored in PBM format (1 bit per
+                         ///< pixel, line aligned to whole byte, 1 is black
+                         ///< /"ink on"/), otherwise 1 byte per pixel, 1 is
+                         ///< white "light on"); if .depth != 1 || .maxval != 1,
+                         ///< this value is undefined
+};
 
-static bool pam_write(const char *filename, unsigned int width, unsigned int height, int depth, const unsigned char *data) {
-        FILE *file = fopen(filename, "wb");
-        if (!file) {
-                fprintf(stderr, "Failed to open %s for writing!", filename);
-                return false;
-        }
-        const char *tuple_type = "INVALID";
-        switch (depth) {
-                case 4: tuple_type = "RGB_ALPHA"; break;
-                case 3: tuple_type = "RGB"; break;
-                case 2: tuple_type = "GRAYSCALE_ALPHA"; break;
-                case 1: tuple_type = "GRAYSCALE"; break;
-                default: fprintf(stderr, "Wrong depth: %d\n", depth);
-        }
-        fprintf(file, "P7\n"
-                "WIDTH %u\n"
-                "HEIGHT %u\n"
-                "DEPTH %d\n"
-                "MAXVAL 255\n"
-                "TUPLTYPE %s\n"
-                "ENDHDR\n",
-                width, height, depth, tuple_type);
-        fwrite((const char *) data, width * height * depth, 1, file);
-        bool ret = !ferror(file);
-        fclose(file);
-        return ret;
-}
+/**
+ * read PAM/PNM file
+ *
+ * @param      filename   file name
+ * @param[out] info       pointer to metadata struct
+ * @param[out] data       pointer to byte array, can be 0, in which case no data
+ *                        are written (only metadata read )
+ * @param[out] allocaltor allocator to alloc @ref data; if 0, no data are
+ *                        read/allocated, only @ref info set
+ */
+bool pam_read(const char *filename, struct pam_metadata *info, unsigned char **data, void *(*allocator)(size_t));
+
+enum {
+        PAM_PITCH_CONTINUOUS = 0,
+};
+
+/**
+ * write PAM or PNM file
+ *
+ * @param filename file name to be written to
+ * @param width    image width
+ * @param pitch    input line pitch in bytes; PAM_PITCH_CONTINUOUS can be used
+ *                 if input pitch == width * ch_count * (maxval <= 255 ? 1 : 2)
+ * @param height   image height
+ * @param ch_count image channel count (1-4 for output PAM, 1 or 3 for PNM, see
+ *                 @ref pnm)
+ * @param maxval   maximal sample value, typically 255 for 8-bit
+ * @param data     bytes to be written
+ * @param pnm      use PNM file (instead of PAM)
+ */
+bool pam_write(const char *filename, unsigned int width, unsigned int pitch,
+               unsigned int height, int ch_count, int maxval,
+               const unsigned char *data, bool pnm);
 
 #endif // defined PAM_H_7E23A609_963A_45A8_88E2_ED4D3FDFF69F

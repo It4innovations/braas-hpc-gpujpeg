@@ -1,12 +1,12 @@
 AC_PREREQ([2.65])
 # change version also in CMakeLists.txt
-AC_INIT([libgpujpeg],[0.20.3],[https://github.com/CESNET/GPUJPEG/issues],[libgpujpeg],[https://github.com/CESNET/GPUJPEG])
+AC_INIT([libgpujpeg],[0.27.10],[https://github.com/CESNET/GPUJPEG/issues],[libgpujpeg],[https://github.com/CESNET/GPUJPEG])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_SRCDIR([src/main.c])
 AC_CONFIG_AUX_DIR([.])
 AM_INIT_AUTOMAKE([foreign])
 
-AC_CONFIG_HEADERS([config.h libgpujpeg/gpujpeg_version.h])
+AC_CONFIG_HEADERS([libgpujpeg/gpujpeg_version.h])
 COMMON_FLAGS="${COMMON_FLAGS:+$COMMON_FLAGS }-DHAVE_GPUJPEG_VERSION_H"
 
 AC_DEFINE([GPUJPEG_VERSION_MAJOR], regexp(AC_PACKAGE_VERSION, [\([^.]*\)], [\1]), [GPUJPEG major version])
@@ -37,7 +37,15 @@ if test "$enable_static" = yes && test "$enable_shared" = yes; then
 	AC_MSG_ERROR([Currently only one of --enable-static/--enable-shared can be specified at once.])
 fi
 
-AC_ARG_VAR([CUDA_FLAGS], [Flags passed to nvcc])
+if test "$enable_static" = yes; then
+	pc_cflags="${pc_cflags:+$pc_cflags }-DGPUJPEG_STATIC"
+	pc_libs="${pc_libs:+$pc_libs }-lcudart"
+fi
+AC_SUBST(pc_cflags)
+
+# use CUDAFLAGS (without _) from caller but use CUDA_FLAGS internaly (legacy)
+AC_ARG_VAR([CUDAFLAGS], [Flags passed to nvcc])
+CUDA_FLAGS="$CUDAFLAGS $CUDA_FLAGS"
 
 if test x$enable_debug = xyes ; then
 	COMMON_FLAGS="$COMMON_FLAGS -g -D_DEBUG -O0"
@@ -49,7 +57,7 @@ fi
 # huffmann
 AC_ARG_ENABLE(huffman-gpu-const-tables, AS_HELP_STRING([--enable-huffman-gpu-const-tables],[enable Huffman GPU decoder tables in constant memory]) )
 if test x$enable_huffman_gpu_const_tables = xyes ; then
-	AC_DEFINE([HUFFMAN_GPU_CONST_TABLES], [1], [Build with huffmann coder tables in constant memory])
+	COMMON_FLAGS="$COMMON_FLAGS -DHUFFMAN_GPU_CONST_TABLES"
 else
         enable_huffman_gpu_const_tables=no
 fi
@@ -81,17 +89,17 @@ if test $enable_opengl != no ; then
 	if test "$FOUND_GLEW_L" != yes -o "$FOUND_GLEW_H" != yes -o "$FOUND_GL_L" != yes; then
 		opengl=no
 	elif test "$FOUND_X11_L" = yes -a "$FOUND_GLX_H" = yes; then
-		AC_DEFINE([GPUJPEG_USE_GLX], [1], [Use GLX for OpenGL context creation])
+		COMMON_FLAGS="$COMMON_FLAGS -DGPUJPEG_USE_GLX"
 		GPUJPEG_LIBS="${GPUJPEG_LIBS:+$GPUJPEG_LIBS }-lX11"
 		opengl_context=glx
 	elif test "$FOUND_GLFW_L" = yes -a "$FOUND_GLFW_H" = yes; then
-		AC_DEFINE([GPUJPEG_USE_GLFW], [1], [Use GLFW for OpenGL context creation])
+		COMMON_FLAGS="$COMMON_FLAGS -DGPUJPEG_USE_GLFW"
 		GPUJPEG_LIBS="${GPUJPEG_LIBS:+$GPUJPEG_LIBS }-lGLFW"
 		opengl_context=glfw
 	fi
 
 	if test $opengl = yes; then
-		AC_DEFINE([GPUJPEG_USE_OPENGL], [1], [Build with OpenGL support])
+		COMMON_FLAGS="$COMMON_FLAGS -DGPUJPEG_USE_OPENGL"
 		GPUJPEG_LIBS="${GPUJPEG_LIBS:+$GPUJPEG_LIBS }-lGLEW -lGL"
 	fi
 
@@ -158,7 +166,7 @@ case "$CUDA_COMPILER" in
                 ;;
         *clang*)
                 CUDA_COMPUTE_ARGS="--cuda-gpu-arch=sm_30 --cuda-gpu-arch=sm_35"
-                CUDA_FLAGS+=" --cuda-path=$CUDA_INSTALL_PATH"
+                CUDA_FLAGS="$CUDA_FLAGS --cuda-path=$CUDA_INSTALL_PATH"
                 ;;
         *)
                 AC_MSG_ERROR([Unsupported cuda compiler $CUDA_COMPILER])
@@ -178,7 +186,7 @@ AC_ARG_WITH(cuda-host-compiler,
 if test "x${with_cuda_host_compiler}" != "x" ; then
 	AC_CHECK_PROG([cuda_host_cc], [${with_cuda_host_compiler}],[yes])
 	if test "x${cuda_host_cc}" = "xyes" -o -x "${with_cuda_host_compiler}"; then
-		CUDA_FLAGS+=" -ccbin ${with_cuda_host_compiler}"
+		CUDA_FLAGS="$CUDA_FLAGS -ccbin ${with_cuda_host_compiler}"
 	else
 		AC_MSG_FAILURE([Binary ${with_cuda_host_compiler} given as cuda host compiler, yet not found!])
 	fi

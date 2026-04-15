@@ -1,6 +1,6 @@
 /**
  * @file
- * Copyright (c) 2011-2020, CESNET z.s.p.o
+ * Copyright (c) 2011-2023, CESNET z.s.p.o
  * Copyright (c) 2011, Silicon Genome, LLC.
  *
  * All rights reserved.
@@ -31,11 +31,7 @@
 #ifndef GPUJPEG_TABLE_H
 #define GPUJPEG_TABLE_H
 
-#include <libgpujpeg/gpujpeg_type.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include "../libgpujpeg/gpujpeg_type.h"
 
 #define GPUJPEG_ORDER_NATURAL_SIZE (64 + 16)
 
@@ -201,9 +197,5 @@ gpujpeg_table_huffman_decoder_init(struct gpujpeg_table_huffman_decoder* table, 
  */
 void
 gpujpeg_table_huffman_decoder_compute(struct gpujpeg_table_huffman_decoder* table);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // GPUJPEG_TABLE_H

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2019, CESNET z.s.p.o
+ * Copyright (c) 2011-2025, CESNET
  * Copyright (c) 2011, Silicon Genome, LLC.
  *
  * All rights reserved.
@@ -35,39 +35,143 @@
 #ifndef GPUJPEG_COMMON_INTERNAL_H
 #define GPUJPEG_COMMON_INTERNAL_H
 
-#include <cuda_runtime.h>
+#include "gpujpeg_device_compat.h"
 #include <math.h> // NAN
+#include <stdio.h>
+#include <stdlib.h>
+#include "../libgpujpeg/gpujpeg_common.h"
+#include "../libgpujpeg/gpujpeg_type.h"
+#include "gpujpeg_preprocessor.h" // struct gpujpeg_preprocessor
 #include "gpujpeg_util.h"
-#include "libgpujpeg/gpujpeg_common.h"
-#include "libgpujpeg/gpujpeg_type.h"
+
+// static_assert compat
+#if defined __cplusplus
+    #if __cplusplus < 201103L
+        #if defined _MSC_VER
+            #if _MSC_VER >= 1914
+                #error "compiler is not advertising C++11 - perhaps not passed /Zc:__cplusplus?"
+            #endif
+            // do nothing for earlier versions - unsolvable, __cplusplus is always 199711L
+        #else
+            #error "compiler is not supporting C++11 - perhaps not passed std?"
+        #endif
+    #endif
+#elif __STDC_VERSION__ < 201112L
+    #if defined _MSC_VER && _MSC_VER <= 1900
+        #define static_assert(cond, msg)
+    #else
+        #error "compiler is not supporting C11 - perhaps an error?"
+    #endif
+#elif __STDC_VERSION__ < 202311L
+    #include <assert.h> // static_assert compat macro in C11-C17
+#endif
+
+// VS 2015 compat
+#if defined _MSC_VER && _MSC_VER <= 1900
+#define __func__ ""
+#endif // VS <=2015
+
+// MSVC doesnt support `foo(int a[static 3])` syntax
+#if defined _MSC_VER
+#define STAT_ARR_DCL(c)
+#else
+#define STAT_ARR_DCL(c) static c
+#endif
 
 /** Contants */
 #define GPUJPEG_BLOCK_SIZE                      8
 #define GPUJPEG_BLOCK_SQUARED_SIZE              64
 #define GPUJPEG_MAX_BLOCK_COMPRESSED_SIZE       (GPUJPEG_BLOCK_SIZE * GPUJPEG_BLOCK_SIZE * 8)
 
+#define GPUJPEG_IDCT_BLOCK_X	8
+#define GPUJPEG_IDCT_BLOCK_Y 	8
+#define GPUJPEG_IDCT_BLOCK_Z 	2
+
 /** Maximum JPEG header size (MUST be divisible by 4!!!) */
 #define GPUJPEG_MAX_HEADER_SIZE                 (65536 - 100)
 
-#define GPUJPEG_ASSERT(cond) do { if (!(cond)) { fprintf(stderr, "%s:%d: %s: Assertion `" #cond "' failed.\n", __FILE__, __LINE__, __func__); abort(); } } while(0)
+/**
+ * JPEG component type
+ */
+enum gpujpeg_component_type {
+    GPUJPEG_COMPONENT_LUMINANCE = 0,
+    GPUJPEG_COMPONENT_CHROMINANCE = 1,
+    GPUJPEG_COMPONENT_TYPE_COUNT = 2
+};
+
+/**
+ * JPEG huffman type
+ */
+enum gpujpeg_huffman_type {
+    GPUJPEG_HUFFMAN_DC = 0,
+    GPUJPEG_HUFFMAN_AC = 1,
+    GPUJPEG_HUFFMAN_TYPE_COUNT = 2
+};
+
+enum {
+    GPUJPEG_3_COMPONENTS = 3,
+    GPUJPEG_4_COMPONENTS = 4,
+};
+
+/// unconditional assert
+#define GPUJPEG_ASSERT(cond)                                                                                           \
+    do {                                                                                                               \
+        if ( !(cond) ) {                                                                                               \
+            (void)fprintf(stderr, "%s:%d: %s: Assertion `" #cond "' failed.\n", __FILE__, __LINE__, __func__);         \
+            abort();                                                                                                   \
+        }                                                                                                              \
+    } while ( 0 )
+
+#define PRINTF(...) (void)fprintf(stderr, __VA_ARGS__)
+
+extern const char *gj_fg_red;
+extern const char *gj_fg_yellow;
+extern const char *gj_term_reset;
+
+// Pragma to suppress GNU extension warnings for these specific macros
+#ifdef GPUJPEG_USE_SYCL
+#   pragma clang diagnostic push
+#   pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
+#endif
+
+#define ERROR_MSG(fmt, ...) (void)fprintf(stderr, "%s[GPUJPEG] [Error] " fmt "%s", gj_fg_red, ##__VA_ARGS__, gj_term_reset)
+#define WARN_MSG(fmt, ...) (void)fprintf(stderr, "%s[GPUJPEG] [Warning] " fmt "%s", gj_fg_yellow, ##__VA_ARGS__, gj_term_reset)
+
+#ifdef GPUJPEG_USE_SYCL
+#   pragma clang diagnostic pop
+#endif
+
+#define VERBOSE_MSG(log_level, ...)                                                                                    \
+    if ( log_level >= GPUJPEG_LL_VERBOSE )                                                                             \
+        (void)fprintf(stderr, "[GPUJPEG] [Verbose] " __VA_ARGS__)
+#define DEBUG_MSG(log_level, ...)                                                                                      \
+    if ( log_level >= GPUJPEG_LL_DEBUG )                                                                               \
+        (void)fprintf(stderr, "[GPUJPEG] [Debug] " __VA_ARGS__)
+#define DEBUG2_MSG(log_level, ...)                                                                                     \
+    if ( log_level >= GPUJPEG_LL_DEBUG2 )                                                                              \
+        (void)fprintf(stderr, "[GPUJPEG] [Debug2] " __VA_ARGS__)
+
+#ifndef MIN
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
 
 struct gpujpeg_timer {
     int started;
-    cudaEvent_t start;
-    cudaEvent_t stop;
+    gpuEvent_t start;
+    gpuEvent_t stop;
 };
 
 #define GPUJPEG_CUSTOM_TIMER_CREATE(name, err_action) \
     do { \
-        GPUJPEG_CHECK(cudaEventCreate(&(name).start), err_action); \
-        GPUJPEG_CHECK(cudaEventCreate(&(name).stop), err_action); \
-        name.started = 0; \
+        GPUJPEG_CHECK(gpuEventCreate(&(name).start), err_action); \
+        GPUJPEG_CHECK(gpuEventCreate(&(name).stop), err_action); \
+        (name).started = 0; \
     } while (0)
 
 #define GPUJPEG_CUSTOM_TIMER_DESTROY(name, err_action) \
     do { \
-        GPUJPEG_CHECK(cudaEventDestroy((name).start), err_action); \
-        GPUJPEG_CHECK(cudaEventDestroy((name).stop), err_action); \
+        GPUJPEG_CHECK(gpuEventDestroy((name).start), err_action); \
+        GPUJPEG_CHECK(gpuEventDestroy((name).stop), err_action); \
     } while (0)
 
 /**
@@ -76,17 +180,23 @@ struct gpujpeg_timer {
  * @param name
  * @todo stream
  */
-#define GPUJPEG_CUSTOM_TIMER_START(name, stream, err_action) \
-    name.started = 1; \
-    GPUJPEG_CHECK(cudaEventRecord((name).start, stream), err_action)
+#define GPUJPEG_CUSTOM_TIMER_START(name, record_perf, stream, err_action) \
+    if (record_perf) { \
+        (name).started = 1; \
+        GPUJPEG_CHECK(gpuEventRecord((name).start, stream), err_action); \
+    } else { \
+        (name).started = -1; \
+    }
 
 /**
  * Stop timer
  *
  * @param name
  */
-#define GPUJPEG_CUSTOM_TIMER_STOP(name, stream, err_action) \
-    GPUJPEG_CHECK(cudaEventRecord((name).stop, stream), err_action)
+#define GPUJPEG_CUSTOM_TIMER_STOP(name, record_perf, stream, err_action) \
+    if (record_perf) { \
+        GPUJPEG_CHECK(gpuEventRecord((name).stop, stream), err_action); \
+    }
 
 /**
  * Get duration for timer
@@ -94,11 +204,13 @@ struct gpujpeg_timer {
  * @param name
  */
 #define GPUJPEG_CUSTOM_TIMER_DURATION(name) \
-    (name).started ? gpujpeg_custom_timer_get_duration((name).start, (name).stop) : 0
+    (name).started == 1 ? gpujpeg_custom_timer_get_duration((name).start, (name).stop) : (name).started == 0 ? 0 : ( fprintf(stderr, "Debug timer disabled!\n"), 0)
 
-#ifdef __cplusplus
-extern "C" {
-#endif // __cplusplus
+// Forward declaration for timer function
+float gpujpeg_custom_timer_get_duration(gpuEvent_t start, gpuEvent_t stop);
+
+// Error string wrapper for HIP compatibility
+const char* gpujpeg_get_error_string(gpuError_t error);
 
 /**
  * JPEG segment structure. Segment is data in scan generated by huffman coder
@@ -115,11 +227,11 @@ struct gpujpeg_segment
     int mcu_count;
 
     /// Data compressed index (output/input data from/to segment for encoder/decoder)
-    int data_compressed_index;
+    size_t data_compressed_index;
     /// Date temp index (temporary data of segment in CC 2.0 encoder)
-    int data_temp_index;
+    size_t data_temp_index;
     /// Data compressed size (output/input data from/to segment for encoder/decoder)
-    int data_compressed_size;
+    size_t data_compressed_size;
 
     /// Offset of first block index
     int block_index_list_begin;
@@ -148,7 +260,7 @@ struct gpujpeg_component
     /// Allocated data height for component (rounded to 8 for 8x8 blocks)
     int data_height;
     /// Allocated data size for component
-    int data_size;
+    size_t data_size;
 
     /// MCU size for component (minimun coded unit size)
     int mcu_size;
@@ -228,8 +340,8 @@ struct gpujpeg_coder
     /// Number of allocated segments
     int segment_allocated_size;
 
-    /// Preprocessor data (kernel function pointer)
-    void* preprocessor;
+    /// Preprocessor or postprocessor data
+    struct gpujpeg_preprocessor preprocessor;
 
     /// Maximum sampling factor from components
     struct gpujpeg_component_sampling_factor sampling_factor;
@@ -249,11 +361,11 @@ struct gpujpeg_coder
     /// Image data height
     int data_height;
     /// Number of raw image bytes
-    long data_raw_size;
+    size_t data_raw_size;
     /// Number of coefficient count for all components
-    int data_size;
+    size_t data_size;
     /// Number of compressed bytes
-    int data_compressed_size;
+    size_t data_compressed_size;
 
     /// Number od 8x8 blocks in all components
     int block_count;
@@ -274,7 +386,7 @@ struct gpujpeg_coder
     /// Memory allocated by gpujpeg
     uint8_t* d_data_raw_allocated;
     /// Allocated data size
-    long data_raw_allocated_size;
+    size_t data_raw_allocated_size;
 
     /// Preprocessor data in device memory (output/input for encoder/decoder)
     uint8_t* d_data;
@@ -286,7 +398,9 @@ struct gpujpeg_coder
     size_t data_allocated_size;
 
     /// Huffman coder data in host memory (output/input for encoder/decoder)
+    /// only **partially** pinned (needs special treatment - @sa gpujpeg_cuda_memcpy_async_partially_pinned)
     uint8_t* data_compressed;
+    size_t data_compressed_pinned_sz; ///< amount of pinned memory from data_compressed
     /// Huffman coder data in device memory (output/input for encoder/decoder)
     uint8_t* d_data_compressed;
     /// Huffman coder temporary data (in device memory only)
@@ -298,6 +412,9 @@ struct gpujpeg_coder
     int cuda_cc_minor; ///< CUDA Compute capability (minor version)
 
     // Operation durations
+    double start_time;    ///< overal coding CPU start time
+    double init_end_time; ///< CPU time after coder (re)initialization
+    double stop_time;     ///< overal coding CPU end time
     struct gpujpeg_timer duration_memory_to;
     struct gpujpeg_timer duration_memory_from;
     struct gpujpeg_timer duration_memory_map;
@@ -307,8 +424,17 @@ struct gpujpeg_coder
     struct gpujpeg_timer duration_huffman_coder;
     struct gpujpeg_timer duration_stream;
     struct gpujpeg_timer duration_in_gpu;
+    // aggregate statistics
+    double first_frame_duration;
+    double aggregate_duration;
+    long frames;
 
     size_t allocated_gpu_memory_size; ///< for gpujpeg_encoder_max_pixels() only (remove?)
+
+    int encoder; ///< 1 if we are encoder, 0 decoder
+
+    // Stream
+    gpuStream_t stream;
 };
 
 /**
@@ -330,7 +456,16 @@ gpujpeg_coder_init(struct gpujpeg_coder* coder);
  * @return size of allocated device memory in bytes if succeeds, otherwise 0
  */
 size_t
-gpujpeg_coder_init_image(struct gpujpeg_coder * coder, const struct gpujpeg_parameters * param, const struct gpujpeg_image_parameters * param_image, cudaStream_t stream);
+gpujpeg_coder_init_image(struct gpujpeg_coder * coder, const struct gpujpeg_parameters * param, const struct gpujpeg_image_parameters * param_image, gpuStream_t stream);
+
+/**
+ * @brief allocate buffers for CPU Huffman coder
+ * Separated from gpujpeg_coder_init_image() - called only if needed, which is not normally so (using GPU Huffman
+ * coder if restart intervals are not disabled).
+ * @return 0 if succeeds, otherwise nonzero
+ */
+int
+gpujpeg_coder_allocate_cpu_huffman_buf(struct gpujpeg_coder * coder);
 
 /**
  * Returns duration statistics for last coded image
@@ -347,14 +482,12 @@ gpujpeg_coder_get_stats(struct gpujpeg_coder *coder, struct gpujpeg_duration_sta
 int
 gpujpeg_coder_deinit(struct gpujpeg_coder* coder);
 
-struct gpujpeg_component;
+void
+coder_process_stats(struct gpujpeg_coder* coder);
+void
+coder_process_stats_overall(struct gpujpeg_coder* coder);
 
-/**
- * Returns gpujpeg_component_sampling_factor[] which has sampling factors set
- * native to given pixel_format
- */
-const struct gpujpeg_component_sampling_factor *
-gpujpeg_get_subsampling(enum gpujpeg_pixel_format pixel_format);
+struct gpujpeg_component;
 
 /**
  * Returns subsampling configuration of a planar pixel format in array of 8
@@ -365,7 +498,7 @@ gpujpeg_get_subsampling(enum gpujpeg_pixel_format pixel_format);
  *
  * @returns array of 8 components representing the sampling factor of the pixel format
  */
-const int *
+const struct gpujpeg_component_sampling_factor *
 gpujpeg_pixel_format_get_sampling_factor(enum gpujpeg_pixel_format pixel_format);
 
 /** Returns number of bytes per pixel */
@@ -380,14 +513,7 @@ gpujpeg_pixel_format_is_interleaved(enum gpujpeg_pixel_format pixel_format);
  * @retval 0 parameters are different
  * @retval 1 parameters are the same
  */
-int
-gpujpeg_parameters_equals(const struct gpujpeg_parameters *p1 , const struct gpujpeg_parameters *p2);
-
-/**
- * @retval 0 parameters are different
- * @retval 1 parameters are the same
- */
-int
+bool
 gpujpeg_image_parameters_equals(const struct gpujpeg_image_parameters *p1 , const struct gpujpeg_image_parameters *p2);
 
 /**
@@ -395,13 +521,40 @@ gpujpeg_image_parameters_equals(const struct gpujpeg_image_parameters *p1 , cons
  *
  * @returns duration in ms, 0.0F in case of error
  */
-float
-gpujpeg_custom_timer_get_duration(cudaEvent_t start, cudaEvent_t stop);
+gpuError_t
+gpujpeg_cuda_memcpy_async_partially_pinned(void* dst, const void* src, size_t count, enum gpuMemcpyKind kind,
+                                           gpuStream_t stream, size_t pinned_sz);
 
+/**
+ * @sa MK_SUBSAMPLING
+ * This is mostly the same except but it zeroes unused coefficient (if comp_count < 4).
+ */
+inline gpujpeg_sampling_factor_t
+gpujpeg_make_sampling_factor(int comp_count, int comp1_h, int comp1_v, int comp2_h, int comp2_v, int comp3_h,
+                             int comp3_v, int comp4_h, int comp4_v)
+{
+    gpujpeg_sampling_factor_t sampling_factor =
+        MK_SUBSAMPLING(comp1_h, comp1_v, comp2_h, comp2_v, comp3_h, comp3_v, comp4_h, comp4_v);
+    const uint32_t mask = 0xFFFFFFFFU << (32U - comp_count * 8U);
+    return sampling_factor & mask;
+}
 
-#ifdef __cplusplus
-} // extern "C"
-#endif // __cplusplus
+#define gpujpeg_make_sampling_factor2(comp_count, sampling_factor)                                                     \
+    gpujpeg_make_sampling_factor(comp_count, (sampling_factor)[0].horizontal, (sampling_factor)[0].vertical,           \
+                                 (sampling_factor)[1].horizontal, (sampling_factor)[1].vertical,                       \
+                                 (sampling_factor)[2].horizontal, (sampling_factor)[2].vertical,                       \
+                                 (sampling_factor)[3].horizontal, (sampling_factor)[3].vertical)
+
+void*
+gpujpeg_cuda_malloc_host(size_t size);
+void
+gpujpeg_init_term_colors(void);
+
+int
+gpujpeg_opt_set_channel_remap(struct gpujpeg_coder* coder, const char* val, const char* optname);
+
+int
+gpujpeg_parse_bool_opt(bool* out_var, const char* val, const char* opt);
 
 #endif // GPUJPEG_COMMON_INTERNAL_H
 

@@ -1,6 +1,6 @@
 /**
  * @file
- * Copyright (c) 2011-2020, CESNET z.s.p.o
+ * Copyright (c) 2011-2025, CESNET
  * Copyright (c) 2011, Silicon Genome, LLC.
  *
  * All rights reserved.
@@ -31,15 +31,11 @@
 #ifndef GPUJPEG_ENCODER_INTERNAL_H
 #define GPUJPEG_ENCODER_INTERNAL_H
 
-#include "libgpujpeg/gpujpeg_common.h"
-#include "libgpujpeg/gpujpeg_encoder.h"
+#include "../libgpujpeg/gpujpeg_common.h"
+#include "../libgpujpeg/gpujpeg_encoder.h"
 #include "gpujpeg_common_internal.h"
 #include "gpujpeg_table.h"
 #include "gpujpeg_writer.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 struct gpujpeg_huffman_gpu_encoder;
 
@@ -62,13 +58,6 @@ struct gpujpeg_encoder
 
     /// JPEG header to be emitted
     enum gpujpeg_header_type header_type;
-
-    // Stream
-    cudaStream_t stream;
 };
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // GPUJPEG_ENCODER_INTERNAL_H

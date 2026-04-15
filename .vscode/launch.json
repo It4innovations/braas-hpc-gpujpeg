@@ -1,0 +1,56 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "(gdb-oneapi) Launch gpujpegtool",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/home/users/mjaros/scratch/install/braas-hpc-gpujpeg-pv/bin/gpujpegtool",
+            "args": [
+                "-s", "1920x1080",
+                "-v",
+                "input.bmp",
+                "output.jpg"
+            ],
+            "stopAtEntry": true,
+            "cwd": "/home/users/mjaros/scratch",
+            "environment": [
+                {
+                    "name": "ONEAPI_DEVICE_SELECTOR",
+                    "value": "level_zero:gpu"
+                },
+                {
+                    "name": "LD_LIBRARY_PATH",
+                    "value": "/home/users/mjaros/scratch/install/braas-hpc-gpujpeg-pv/lib:/opt/intel/oneapi/tcm/1.4/lib:/opt/intel/oneapi/umf/0.11/lib:/opt/intel/oneapi/tbb/2022.2/env/../lib/intel64/gcc4.8:/opt/intel/oneapi/pti/0.13/lib:/opt/intel/oneapi/mpi/2021.16/opt/mpi/libfabric/lib:/opt/intel/oneapi/mpi/2021.16/lib:/opt/intel/oneapi/mkl/2025.2/lib:/opt/intel/oneapi/itac/2022.4/slib:/opt/intel/oneapi/ishmem/1.4/lib:/opt/intel/oneapi/ippcp/2025.2/lib/:/opt/intel/oneapi/ipp/2022.2/lib:/opt/intel/oneapi/dnnl/2025.2/lib:/opt/intel/oneapi/debugger/2025.2/opt/debugger/lib:/opt/intel/oneapi/dal/2025.8/lib:/opt/intel/oneapi/compiler/2025.2/opt/compiler/lib:/opt/intel/oneapi/compiler/2025.2/lib:/opt/intel/oneapi/ccl/2021.16/lib/"
+                },
+                {
+                    "name": "PATH",
+                    "value": "/opt/intel/oneapi/vtune/2025.4/bin64:/opt/intel/oneapi/mpi/2021.16/bin:/opt/intel/oneapi/mkl/2025.2/bin:/opt/intel/oneapi/itac/2022.4/bin:/opt/intel/oneapi/ishmem/1.4/bin:/opt/intel/oneapi/inspector/2024.2/bin64:/opt/intel/oneapi/dpcpp-ct/2025.2/bin:/opt/intel/oneapi/dev-utilities/2025.2/bin:/opt/intel/oneapi/debugger/2025.2/opt/debugger/bin:/opt/intel/oneapi/compiler/2025.2/bin:/opt/intel/oneapi/advisor/2025.2/bin64:/usr/local/go/bin:/home/users/mjaros/.local/bin:/home/users/mjaros/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
+                },
+                // {
+                //     "name": "ZET_ENABLE_PROGRAM_DEBUGGING",
+                //     "value": "1"
+                // },
+            ],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
+        }
+
+    ]
+}
