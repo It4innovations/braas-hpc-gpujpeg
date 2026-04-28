@@ -52,7 +52,7 @@
  * The actual type is defined in the internal build.
  */
 
-#include "../src/gpujpeg_device_compat.h"
+#include "gpujpeg_device_compat.h"
 
 #if __cplusplus >= 201402L || __STDC_VERSION__ >= 202311L
 #define GPUJPEG_DEPRECATED [[deprecated]]

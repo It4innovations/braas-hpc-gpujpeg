@@ -290,7 +290,7 @@ gpujpeg_preprocessor_launch_encode_kernel(struct gpujpeg_coder* coder, dim3 grid
                 }); \
             }); \
             GPUJPEG_SYCL_KERNEL_WAIT_AND_PROFILE(_sycl_e, _start_time, "gpujpeg_preprocessor_raw_to_comp_kernel"); \
-        } \        
+        } \
         return 0;
 
 #else

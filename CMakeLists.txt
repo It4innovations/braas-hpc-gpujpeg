@@ -173,6 +173,19 @@ endif()
 
 message(STATUS "Configured options: ${COMPILED_OPTIONS}")
 
+# Copy gpujpeg_device_compat.h to libgpujpeg directory for proper installation and building
+# Copy to both source tree (for build) and binary tree (for installation)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_device_compat.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/libgpujpeg/gpujpeg_device_compat.h
+    COPYONLY
+)
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gpujpeg_device_compat.h
+    ${CMAKE_CURRENT_BINARY_DIR}/libgpujpeg/gpujpeg_device_compat.h
+    COPYONLY
+)
+
 # GPUJPEG library
 set(H_FILES
     libgpujpeg/gpujpeg_common.h
@@ -180,6 +193,7 @@ set(H_FILES
     libgpujpeg/gpujpeg_encoder.h
     libgpujpeg/gpujpeg_type.h
     libgpujpeg/gpujpeg.h
+    libgpujpeg/gpujpeg_device_compat.h
     ${CMAKE_CURRENT_BINARY_DIR}/libgpujpeg/gpujpeg_version.h
 )
 
@@ -274,6 +288,9 @@ elseif(GPU_BACKEND STREQUAL "SYCL")
 endif()
 
 add_library(gpujpeg ${H_FILES} ${GPUJPEG_COMMON_SOURCES} ${GPUJPEG_GPU_SOURCES})
+
+# Mark header files as PUBLIC_HEADER so they get installed to include/libgpujpeg
+set_target_properties(gpujpeg PROPERTIES PUBLIC_HEADER "${H_FILES}")
 
 # Set language for GPU source files
 if(GPU_BACKEND STREQUAL "HIP")
