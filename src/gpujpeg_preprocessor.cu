@@ -160,6 +160,27 @@ inline GPU_DEVICE void raw_to_comp_load<GPUJPEG_4444_F32_P0123>(const uint8_t* d
     }
 }
 
+inline GPU_DEVICE float 
+color_linear_to_srgb(const float c)
+{
+  if (c < 0.0031308f) {
+    return (c < 0.0f) ? 0.0f : c * 12.92f;
+  }
+  return 1.055f * powf(c, 1.0f / 2.4f) - 0.055f;
+}
+
+template<>
+inline GPU_DEVICE void raw_to_comp_load<GPUJPEG_4444_F32_P0123_LINEAR>(const uint8_t* d_data_raw, int& image_width, int& image_height, int& offset, int& x, int& y, uchar4& r)
+{
+    float scale = 255.0f;
+    float* h = (float*)d_data_raw + offset;
+    unsigned char* f = (unsigned char*)&r.x;
+
+    for (int i = 0; i < 4; i++) {
+        f[i] = (unsigned char)(color_linear_to_srgb(h[i]) * scale);
+    }
+}
+
 template<>
 inline GPU_DEVICE void raw_to_comp_load<GPUJPEG_422_U8_P1020>(const uint8_t* d_data_raw, int &image_width, int &image_height, int &offset, int &x, int &y, uchar4 &r)
 {
@@ -315,6 +336,7 @@ gpujpeg_preprocessor_launch_encode_kernel(struct gpujpeg_coder* coder, dim3 grid
             case GPUJPEG_4444_U8_P0123: LAUNCH_KERNEL(GPUJPEG_4444_U8_P0123, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
             case GPUJPEG_4444_U16_P0123: LAUNCH_KERNEL(GPUJPEG_4444_U16_P0123, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
             case GPUJPEG_4444_F32_P0123: LAUNCH_KERNEL(GPUJPEG_4444_F32_P0123, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
+            case GPUJPEG_4444_F32_P0123_LINEAR: LAUNCH_KERNEL(GPUJPEG_4444_F32_P0123_LINEAR, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
             case GPUJPEG_422_U8_P1020: LAUNCH_KERNEL(GPUJPEG_422_U8_P1020, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
             case GPUJPEG_444_U8_P0P1P2: LAUNCH_KERNEL(GPUJPEG_444_U8_P0P1P2, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
             case GPUJPEG_422_U8_P0P1P2: LAUNCH_KERNEL(GPUJPEG_422_U8_P0P1P2, COLOR, P1, P2, P3, P4, P5, P6, P7, P8) \
@@ -719,6 +741,16 @@ gpujpeg_preprocessor_channel_remap(struct gpujpeg_coder* coder)
                 });
             });
             break;
+        case GPUJPEG_4444_F32_P0123_LINEAR:
+            GPUJPEG_KERNEL_LAUNCH_LOG(channel_remap_kernel<GPUJPEG_4444_F32_P0123_LINEAR>, grid, block, 0, coder->stream);
+            _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
+                sycl::local_accessor<uint8_t, 1> local_mem(sycl::range<1>(0), cgh);
+                cgh.parallel_for(sycl::nd_range<3>(global_range, local_range),
+                                [local_mem, d_data_raw = coder->d_data_raw, width, pitch, height, mapping](sycl::nd_item<3> item) {
+                    channel_remap_kernel<GPUJPEG_4444_F32_P0123_LINEAR>(item, local_mem, d_data_raw, width, pitch, height, mapping);
+                });
+            });
+            break;
         case GPUJPEG_422_U8_P1020:
             GPUJPEG_KERNEL_LAUNCH_LOG(channel_remap_kernel<GPUJPEG_422_U8_P1020>, grid, block, 0, coder->stream);
             _sycl_e = sycl_q->submit([&](sycl::handler& cgh) {
@@ -786,6 +818,7 @@ gpujpeg_preprocessor_channel_remap(struct gpujpeg_coder* coder)
         SWITCH_KERNEL(GPUJPEG_4444_U8_P0123);
         SWITCH_KERNEL(GPUJPEG_4444_U16_P0123);
         SWITCH_KERNEL(GPUJPEG_4444_F32_P0123);
+        SWITCH_KERNEL(GPUJPEG_4444_F32_P0123_LINEAR);
         SWITCH_KERNEL(GPUJPEG_422_U8_P1020);
         SWITCH_KERNEL(GPUJPEG_444_U8_P0P1P2);
         SWITCH_KERNEL(GPUJPEG_422_U8_P0P1P2);
