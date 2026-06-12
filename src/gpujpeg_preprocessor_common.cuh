@@ -83,6 +83,15 @@ gpujpeg_const_div_prepare(const uint32_t d, uint32_t & pre_div_mul, uint32_t & p
     }
 }
 
+// TODO: This is a special case for GPUJPEG_4444_XXX where the data is stored in linear color space, so we need to apply gamma correction before storing the data. This should be implemented as a separate pixel format, but for now we can just add a special case here.
+inline GPU_DEVICE float 
+color_srgb_to_linear(const float c)
+{
+  if (c < 0.04045f) {
+    return (c < 0.0f) ? 0.0f : c * (1.0f / 12.92f);
+  }
+  return powf((c + 0.055f) * (1.0f / 1.055f), 2.4f);
+}
 
 /**
  * Divides unsigned numerator (up to 2^31) by precomputed constant denominator.
@@ -119,6 +128,9 @@ inline GPU_DEVICE int unit_size<GPUJPEG_4444_U8_P0123>() { return 4; }
 
 template<>
 inline GPU_DEVICE int unit_size<GPUJPEG_4444_U16_P0123>() { return 4; }
+
+template<>
+inline GPU_DEVICE int unit_size<GPUJPEG_4444_U16_P0123_LINEAR>() { return 4; }
 
 template<>
 inline GPU_DEVICE int unit_size<GPUJPEG_4444_F32_P0123>() { return 4; }
@@ -178,6 +190,19 @@ gpujpeg_comp_to_raw_store<GPUJPEG_4444_U16_P0123>(uint8_t* d_data_raw, int& imag
 
 template <>
 inline GPU_DEVICE void
+gpujpeg_comp_to_raw_store<GPUJPEG_4444_U16_P0123_LINEAR>(uint8_t* d_data_raw, int& image_width, int& image_height, int& offset,
+                                                 int& x, int& y, uchar4& r)
+{
+    half *output = (half*)d_data_raw;
+
+    output[offset + 0] = __float2half(color_srgb_to_linear((float)r.x / 255.0f));
+    output[offset + 1] = __float2half(color_srgb_to_linear((float)r.y / 255.0f));
+    output[offset + 2] = __float2half(color_srgb_to_linear((float)r.z / 255.0f));
+    output[offset + 3] = __float2half(color_srgb_to_linear((float)r.w / 255.0f));
+}
+
+template <>
+inline GPU_DEVICE void
 gpujpeg_comp_to_raw_store<GPUJPEG_4444_F32_P0123>(uint8_t* d_data_raw, int& image_width, int& image_height, int& offset,
                                                  int& x, int& y, uchar4& r)
 {
@@ -189,16 +214,6 @@ gpujpeg_comp_to_raw_store<GPUJPEG_4444_F32_P0123>(uint8_t* d_data_raw, int& imag
         float fscale = (float) f[i] * scale;
         h[i] = fscale;
     }
-}
-
-// TODO: This is a special case for GPUJPEG_4444_F32_P0123 where the data is stored in linear color space, so we need to apply gamma correction before storing the data. This should be implemented as a separate pixel format, but for now we can just add a special case here.
-inline GPU_DEVICE float 
-color_srgb_to_linear(const float c)
-{
-  if (c < 0.04045f) {
-    return (c < 0.0f) ? 0.0f : c * (1.0f / 12.92f);
-  }
-  return powf((c + 0.055f) * (1.0f / 1.055f), 2.4f);
 }
 
 template <>
