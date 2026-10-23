@@ -285,6 +285,39 @@ depth_pack_kernel(const uint32_t* scratch, const uint32_t* word_offsets, uint32_
         out[begin + i] = src[i];
 }
 
+// Rows of a tile being decoded: the row above and the current one stay in the
+// thread's local memory (the predictor never reads the output image), finished
+// rows are written out.
+struct depth_tile_rows
+{
+    uint16_t prev[GPUJPEG_DEPTH_TILE];
+    uint16_t cur[GPUJPEG_DEPTH_TILE];
+    int x, y, tw;
+    uint16_t* out; // first pixel of the tile in the image
+    int pitch;
+
+    GPU_DEVICE void emit(uint16_t residual)
+    {
+        uint16_t pred;
+        if ( y == 0 )
+            pred = x == 0 ? 0 : cur[x - 1];
+        else if ( x == 0 )
+            pred = prev[0];
+        else
+            pred = depth_med(cur[x - 1], prev[x], prev[x - 1]);
+        cur[x] = (uint16_t)(pred + residual);
+        if ( ++x == tw ) {
+            uint16_t* row = out + (size_t)y * pitch;
+            for ( int i = 0; i < tw; ++i ) {
+                row[i] = cur[i];
+                prev[i] = cur[i];
+            }
+            x = 0;
+            ++y;
+        }
+    }
+};
+
 GPU_GLOBAL void
 depth_decode_kernel(const uint32_t* payload, const uint32_t* word_offsets, int width, int height, int tiles_x,
                     int tile_count, uint16_t* img, int pitch, int* error)
@@ -298,7 +331,14 @@ depth_decode_kernel(const uint32_t* payload, const uint32_t* word_offsets, int w
     const int n = tw * th;
     const uint32_t begin = word_offsets[tile];
     depth_bit_reader br = {payload + begin, (uint64_t)(word_offsets[tile + 1] - begin) * 32, 0, true};
-    img[(size_t)y0 * pitch + x0] = (uint16_t)br.get(16);
+    depth_tile_rows rows;
+    rows.x = 0;
+    rows.y = 0;
+    rows.tw = tw;
+    rows.out = img + (size_t)y0 * pitch + x0;
+    rows.pitch = pitch;
+    // the first pixel is stored as is: a residual against the prediction 0
+    rows.emit((uint16_t)br.get(16));
     const uint32_t kr = br.get(3), kv = br.get(4);
     int pos = 1;
     while ( pos < n && br.ok ) {
@@ -307,19 +347,15 @@ depth_decode_kernel(const uint32_t* payload, const uint32_t* word_offsets, int w
             br.ok = false;
             break;
         }
-        for ( const int end = pos + (int)run; pos < end; ++pos ) {
-            const int x = pos % tw, y = pos / tw;
-            img[(size_t)(y0 + y) * pitch + x0 + x] = depth_predict(img, pitch, x0, y0, x, y);
-        }
+        for ( const int end = pos + (int)run; pos < end; ++pos )
+            rows.emit(0);
         if ( pos < n ) {
             const uint32_t z = br.rice(kv) + 1;
             if ( !br.ok || z > 0xFFFFu ) {
                 br.ok = false;
                 break;
             }
-            const int x = pos % tw, y = pos / tw;
-            img[(size_t)(y0 + y) * pitch + x0 + x] =
-                (uint16_t)(depth_predict(img, pitch, x0, y0, x, y) + depth_unzigzag(z));
+            rows.emit(depth_unzigzag(z));
             ++pos;
         }
     }
