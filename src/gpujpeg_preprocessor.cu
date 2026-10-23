@@ -95,6 +95,26 @@ struct gpujpeg_preprocessor_raw_to_comp_store {
     }
 };
 
+/** Sampling ratio of a component (template value or the dynamic one), 0 = no component */
+template<uint8_t s_samp_factor>
+inline GPU_DEVICE unsigned int
+gpujpeg_preprocessor_samp(unsigned int dynamic)
+{
+    return s_samp_factor == GPUJPEG_DYNAMIC ? dynamic : s_samp_factor;
+}
+
+inline GPU_DEVICE unsigned int
+gpujpeg_preprocessor_get(const uchar4 &v, int i)
+{
+    return i == 0 ? v.x : i == 1 ? v.y : i == 2 ? v.z : v.w;
+}
+
+inline GPU_DEVICE void
+gpujpeg_preprocessor_set(uchar4 &v, int i, unsigned int value)
+{
+    if ( i == 0 ) v.x = value; else if ( i == 1 ) v.y = value; else if ( i == 2 ) v.z = value; else v.w = value;
+}
+
 template<enum gpujpeg_pixel_format>
 inline GPU_DEVICE void raw_to_comp_load(const uint8_t* d_data_raw, int &image_width, int &image_height, int &image_position, int &x, int &y, uchar4 &r);
 
@@ -247,6 +267,60 @@ gpujpeg_preprocessor_raw_to_comp_kernel(GPU_KERNEL_ITEM_PARAM GPU_SHARED_MEM_PAR
 
     // Color transform
     gpujpeg_color_transform<color_space, color_space_internal>::perform(r);
+
+    // Chroma subsampling: the thread at the top-left pixel of a subsampled
+    // block stores the AVERAGE of the block (clamped at the image border), like
+    // libjpeg. Storing only its own pixel dropped 3 of 4 chroma samples (4:2:0),
+    // which gave colour fringes at edges and ~2 dB lower PSNR than libjpeg-turbo.
+    const unsigned int fh[4] = {
+        gpujpeg_preprocessor_samp<s_comp1_samp_factor_h>(data.comp[0].sampling_factor.horizontal),
+        gpujpeg_preprocessor_samp<s_comp2_samp_factor_h>(data.comp[1].sampling_factor.horizontal),
+        gpujpeg_preprocessor_samp<s_comp3_samp_factor_h>(data.comp[2].sampling_factor.horizontal),
+        gpujpeg_preprocessor_samp<s_comp4_samp_factor_h>(data.comp[3].sampling_factor.horizontal)};
+    const unsigned int fv[4] = {
+        gpujpeg_preprocessor_samp<s_comp1_samp_factor_v>(data.comp[0].sampling_factor.vertical),
+        gpujpeg_preprocessor_samp<s_comp2_samp_factor_v>(data.comp[1].sampling_factor.vertical),
+        gpujpeg_preprocessor_samp<s_comp3_samp_factor_v>(data.comp[2].sampling_factor.vertical),
+        gpujpeg_preprocessor_samp<s_comp4_samp_factor_v>(data.comp[3].sampling_factor.vertical)};
+    bool active[4];
+    unsigned int max_h = 1, max_v = 1;
+    bool any_active = false;
+    for ( int i = 0; i < 4; ++i ) {
+        active[i] = fh[i] != 0 && fv[i] != 0 && (fh[i] > 1 || fv[i] > 1)
+            && (image_position_x % fh[i]) == 0 && (image_position_y % fv[i]) == 0;
+        if ( active[i] ) {
+            any_active = true;
+            max_h = fh[i] > max_h ? fh[i] : max_h;
+            max_v = fv[i] > max_v ? fv[i] : max_v;
+        }
+    }
+    if ( any_active ) {
+        unsigned int sum[4] = {0, 0, 0, 0};
+        unsigned int count[4] = {0, 0, 0, 0};
+        for ( unsigned int dy = 0; dy < max_v; ++dy ) {
+            for ( unsigned int dx = 0; dx < max_h; ++dx ) {
+                uchar4 q = r;
+                if ( dx != 0 || dy != 0 ) {
+                    int nx = image_position_x + (int)dx < image_width ? image_position_x + (int)dx : image_width - 1;
+                    int ny = image_position_y + (int)dy < image_height ? image_position_y + (int)dy : image_height - 1;
+                    int noffset = (ny * image_width + nx) * unit_size<pixel_format>() + image_width_padding * ny;
+                    raw_to_comp_load<pixel_format>(d_data_raw, image_width, image_height, noffset, nx, ny, q);
+                    gpujpeg_color_transform<color_space, color_space_internal>::perform(q);
+                }
+                for ( int i = 0; i < 4; ++i ) {
+                    if ( active[i] && dx < fh[i] && dy < fv[i] ) {
+                        sum[i] += gpujpeg_preprocessor_get(q, i);
+                        count[i]++;
+                    }
+                }
+            }
+        }
+        for ( int i = 0; i < 4; ++i ) {
+            if ( active[i] ) {
+                gpujpeg_preprocessor_set(r, i, (sum[i] + count[i] / 2) / count[i]);
+            }
+        }
+    }
 
     // Store
     gpujpeg_preprocessor_raw_to_comp_store<s_comp1_samp_factor_h, s_comp1_samp_factor_v, s_comp2_samp_factor_h,

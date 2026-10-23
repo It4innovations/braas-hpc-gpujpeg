@@ -370,12 +370,14 @@ gpujpeg_encoder_encode(struct gpujpeg_encoder* encoder, const struct gpujpeg_par
         return -1;
     }
 
-    if ( img_changed ) {
-        // (Re)initialize preprocessor
-        if ( gpujpeg_preprocessor_encoder_init(&encoder->coder) != 0 ) {
-            fprintf(stderr, "[GPUJPEG] [Error] Failed to init preprocessor!\n");
-            return -1;
-        }
+    // (Re)initialize preprocessor. Not only on an image change: a change of the
+    // parameters alone (e.g. 4:2:0 -> 4:4:4 at the same size) reallocates the
+    // component buffers in gpujpeg_coder_init_image, and the preprocessor keeps
+    // pointers to them and their sampling factors (stale pointers -> garbage
+    // output or illegal memory accesses). The init only fills a small struct.
+    if ( gpujpeg_preprocessor_encoder_init(&encoder->coder) != 0 ) {
+        fprintf(stderr, "[GPUJPEG] [Error] Failed to init preprocessor!\n");
+        return -1;
     }
     coder->init_end_time = param_adjusted.perf_stats ? gpujpeg_get_time() : 0;
 

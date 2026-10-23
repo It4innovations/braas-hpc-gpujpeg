@@ -190,6 +190,7 @@ configure_file(
 set(H_FILES
     libgpujpeg/gpujpeg_common.h
     libgpujpeg/gpujpeg_decoder.h
+    libgpujpeg/gpujpeg_depth.h
     libgpujpeg/gpujpeg_encoder.h
     libgpujpeg/gpujpeg_type.h
     libgpujpeg/gpujpeg.h
@@ -222,6 +223,7 @@ list(APPEND GPUJPEG_COMMON_SOURCES
 if(GPU_BACKEND STREQUAL "CUDA")
     set(GPUJPEG_GPU_SOURCES
         src/gpujpeg_dct_gpu.cu
+        src/gpujpeg_depth.cu
         src/gpujpeg_huffman_gpu_decoder.cu
         src/gpujpeg_huffman_gpu_encoder.cu
         src/gpujpeg_postprocessor.cu
@@ -242,6 +244,7 @@ if(GPU_BACKEND STREQUAL "CUDA")
 elseif(GPU_BACKEND STREQUAL "HIP")
     set(GPUJPEG_GPU_SOURCES
         src/gpujpeg_dct_gpu.cpp
+        src/gpujpeg_depth.cpp
         src/gpujpeg_huffman_gpu_decoder.cpp
         src/gpujpeg_huffman_gpu_encoder.cpp
         src/gpujpeg_postprocessor.cpp
@@ -274,6 +277,7 @@ elseif(GPU_BACKEND STREQUAL "SYCL")
     set(GPUJPEG_GPU_SOURCES
         src/gpujpeg_device_compat_sycl.cpp
         src/gpujpeg_dct_gpu.cpp
+        src/gpujpeg_depth.cpp
         src/gpujpeg_huffman_gpu_decoder.cpp
         src/gpujpeg_huffman_gpu_encoder.cpp
         src/gpujpeg_postprocessor.cpp

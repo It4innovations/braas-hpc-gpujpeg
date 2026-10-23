@@ -33,5 +33,6 @@
 
 #include "gpujpeg_encoder.h"
 #include "gpujpeg_decoder.h"
+#include "gpujpeg_depth.h"
 
 #endif // GPUJPEG_H
